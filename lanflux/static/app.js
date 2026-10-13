@@ -1,6 +1,7 @@
 import { LanfluxClient } from './transfer.js';
 import { DiagnosticsView, formatBinaryBytes as formatBytes, formatRate, formatSeconds, formatMilliseconds, routeLabel } from './diagnostics.js';
-import { buildExperimentReport, experimentsToCsv, downloadText, releaseExportDownloads } from './experiments.js';
+import { invitedRoom } from './invitation.js';
+import { AINetworkMonitor } from './aiml.js';
 
 const $ = (id) => document.getElementById(id);
 const terminalStates = new Set(['completed', 'rejected', 'cancelled', 'failed']);
@@ -15,6 +16,7 @@ let initialized = false;
 let toastTimer;
 let confirmationAction = null;
 const diagnostics = new DiagnosticsView();
+const aiMonitor = new AINetworkMonitor();
 
 function preferences() {
   try { return JSON.parse(localStorage.getItem('lanflux.preferences') || '{}'); }
@@ -22,7 +24,7 @@ function preferences() {
 }
 
 const saved = preferences();
-$('device-name').value = typeof saved.name === 'string' ? saved.name.slice(0, 40) : 'My browser';
+$('device-name').value = typeof saved.name === 'string' && saved.name.trim() ? saved.name.trim().slice(0, 40) : 'My browser';
 $('settings-name').value = $('device-name').value;
 $('relay-only').checked = saved.relayOnly === true;
 $('local-device-name').textContent = $('device-name').value;
@@ -63,7 +65,7 @@ function setStatus(event) {
   $('connection-message').textContent = event.message || '';
   if (['idle', 'waiting', 'disconnected', 'failed'].includes(status)) {
     $('connection-route').textContent = 'Not established';
-    $('route-description').textContent = 'File contents travel over an encrypted WebRTC connection. The server only introduces the browsers.';
+    $('route-description').textContent = 'File contents travel over an encrypted WebRTC connection. Python handles signaling and measured network metadata.';
   }
   refreshControls();
 }
@@ -71,8 +73,9 @@ function setStatus(event) {
 function setRoom(room) {
   currentRoom = room;
   document.body.classList.add('room-active');
-  const base = config.public_url || location.origin;
-  invitation = `${base.replace(/\/$/, '')}/?room=${encodeURIComponent(room.roomId)}`;
+  const base = config.invitation_base_url || config.public_url || location.origin;
+  invitation = room.invitationUrl || `${base.replace(/\/$/, '')}/?room=${encodeURIComponent(room.roomId)}`;
+  $('invitation-url').value = invitation;
   $('room-id').textContent = displayRoomCode(room.roomId);
   $('room-panel').hidden = false;
   $('setup-panel').hidden = true;
@@ -240,9 +243,6 @@ function updateCounts() {
   $('completed-note').hidden = finished === 0;
   $('clear-completed').hidden = finished === 0;
   $('nav-transfer-count').textContent = String(active);
-  $('export-report').disabled = finished === 0;
-  $('export-csv').disabled = finished === 0;
-  $('experiment-record-count').textContent = finished ? `${finished} finished ${finished === 1 ? 'record' : 'records'} ready to export.` : 'No finished records to export yet.';
 }
 
 function clearFinishedViews() {
@@ -259,7 +259,7 @@ function clearFinishedViews() {
 const client = new LanfluxClient({ onEvent(event) {
   switch (event.type) {
     case 'status': setStatus(event); break;
-    case 'room': setRoom(event); break;
+    case 'room': setRoom(event); aiMonitor.join(event); break;
     case 'peer': $('peer-name').textContent = event.name || (event.connected ? 'Other browser' : 'Not connected'); break;
     case 'transfer': renderTransfer(event.transfer); break;
     case 'route': setRoute(event.route); break;
@@ -267,8 +267,9 @@ const client = new LanfluxClient({ onEvent(event) {
     case 'config': config = event.config; updateLimits(); break;
     case 'memory': $('memory-status').textContent = `${formatBytes(event.used)} / ${formatBytes(event.limit)} browser memory`; break;
     case 'cleared': clearFinishedViews(); break;
-    case 'diagnostics': diagnostics.update(event.diagnostics); break;
+    case 'diagnostics': diagnostics.update(event.diagnostics); aiMonitor.observe(event.diagnostics,client); break;
     case 'left':
+      aiMonitor.leave();
       currentRoom = null;
       document.body.classList.remove('room-active');
       invitation = '';
@@ -278,7 +279,7 @@ const client = new LanfluxClient({ onEvent(event) {
       $('ice-details-panel').hidden = true;
       $('ice-details').textContent = '';
       $('connection-route').textContent = 'Not established';
-      $('route-description').textContent = 'File contents travel over an encrypted WebRTC connection. The server only introduces the browsers.';
+      $('route-description').textContent = 'File contents travel over an encrypted WebRTC connection. Python handles signaling and measured network metadata.';
       refreshControls();
       break;
   }
@@ -310,7 +311,10 @@ async function roomAction(action) {
       if (!code) throw new Error('Paste a room code or a LANFLUX invitation link.');
       await client.joinRoom(code.toUpperCase(), name);
     }
-  } catch (error) { showError(error.message); }
+  } catch (error) {
+    if (!currentRoom && client.roomId) client.leave();
+    showError(error.message);
+  }
   finally {
     busy = false;
     $('create-room').textContent = 'Create a room ↗';
@@ -404,7 +408,7 @@ for (const list of [$('active-transfers'), $('completed-transfers')]) {
   });
 }
 $('clear-completed').addEventListener('click', () => {
-  requestConfirmation({ title: 'Clear finished files and records?', description: 'This removes finished transfer records and deletes received files from browser memory, including files you have not downloaded. Download anything you need and export experiment records first.', actionLabel: 'Clear finished files', keepLabel: 'Keep files', action: () => {
+  requestConfirmation({ title: 'Clear finished files and records?', description: 'This removes finished transfer records and deletes received files from browser memory, including files you have not downloaded. Download anything you need first.', actionLabel: 'Clear finished files', keepLabel: 'Keep files', action: () => {
     client.clearCompleted();
     toast('Finished transfers cleared. Received file memory released.');
   } });
@@ -434,20 +438,6 @@ $('inspect-connection').addEventListener('click', async () => {
 });
 $('hide-ice-details').addEventListener('click', () => { $('ice-details-panel').hidden = true; $('ice-details').textContent = ''; $('inspect-connection').focus(); });
 
-function experimentOptions() {
-  return { environmentLabel: $('experiment-environment').value.trim(), notes: $('experiment-notes').value.trim() };
-}
-for (const kind of ['report', 'csv']) $(`export-${kind}`).addEventListener('click', () => {
-  const records = Array.from(client.transfers.values());
-  const options = experimentOptions();
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  try {
-    const text = kind === 'csv' ? experimentsToCsv(records, options) : buildExperimentReport(records, options);
-    downloadText(text, `lanflux-${kind}-${stamp}.${kind === 'csv' ? 'csv' : 'txt'}`, kind === 'csv' ? 'text/csv' : 'text/plain');
-    toast(`${kind === 'csv' ? 'CSV' : 'Experiment report'} download requested.`);
-  } catch (error) { showError(error.message || 'The experiment export could not be created.'); }
-});
-
 document.querySelectorAll('a.nav-link').forEach((link) => link.addEventListener('click', () => {
   document.querySelectorAll('a.nav-link').forEach((item) => { item.classList.remove('active'); item.removeAttribute('aria-current'); });
   link.classList.add('active');
@@ -460,11 +450,13 @@ window.addEventListener('pagehide', () => {
   confirmationAction = null;
   document.querySelectorAll('dialog[open]').forEach((dialog) => dialog.close());
   diagnostics.close();
-  releaseExportDownloads();
+  aiMonitor.close();
   client.leave();
   client.clearCompleted();
   $('ice-details').textContent = '';
 });
+// A cached document has closed channels and detached observers/listeners. Rebuild it.
+window.addEventListener('pageshow', (event) => { if (event.persisted) location.reload(); });
 
 function openSettings() { $('settings-name').value = $('device-name').value; $('settings-dialog').showModal(); }
 $('settings-open').addEventListener('click', openSettings);
@@ -497,9 +489,6 @@ $('settings-form').addEventListener('submit', (event) => {
 });
 $('alert-dismiss').addEventListener('click', () => { $('alert').hidden = true; });
 
-const linkedRoom = new URLSearchParams(location.search).get('room');
-if (linkedRoom) { $('room-code').value = linkedRoom.slice(0, 512); $('room-code').focus(); }
-
 async function start() {
   refreshControls();
   try {
@@ -511,6 +500,11 @@ async function start() {
     $('relay-only').checked = Boolean(relayOnly);
     client.setRelayOnly(Boolean(relayOnly));
     initialized = true;
+    const linkedRoom = invitedRoom(location.search);
+    if (linkedRoom) {
+      $('room-code').value = linkedRoom;
+      await roomAction('join');
+    }
   } catch (error) { showError(error.message || 'LANFLUX could not start. Refresh this page and check that the server is running.'); }
   refreshControls();
 }

@@ -1,6 +1,6 @@
 # Vendored incremental hashing
 
-These modules are copied without algorithm modifications from `@noble/hashes` **2.4.0**, by Paul Miller. The included `LICENSE` is the upstream MIT license; it applies to this third-party code, not to the original unlicensed LANFLUX reference repository.
+These modules are copied without algorithm modifications from `@noble/hashes` **2.4.0**, by Paul Miller. The included `LICENSE` is the upstream MIT license and applies to these third-party modules.
 
 Source: https://github.com/paulmillr/noble-hashes/tree/2.4.0
 

@@ -31,7 +31,7 @@
         <div class="hero-copy">
           <p class="eyebrow"><span class="eyebrow-line"></span> Your sharing workspace</p>
           <h1 id="hero-title">Private by design.<br><span>Verified byte by byte.</span></h1>
-          <p class="hero-description">Pair two browsers. Send encrypted files.<br>See the connection and verify every completed transfer.</p>
+          <p class="hero-description">Pair two browsers. Send encrypted files.<br>Check the route. Verify every received file.</p>
           <div class="hero-notes"><span><span class="shield-icon" aria-hidden="true"></span>WebRTC encrypted</span><span><span class="approval-icon" aria-hidden="true">✓</span>SHA-256 verification</span></div>
         </div>
         <section class="panel pairing-panel" aria-labelledby="pairing-title">
@@ -54,6 +54,7 @@
             <p class="muted">Open this link on your other device to connect.</p>
             <div class="room-code-row"><div><span class="small-label">Room code</span><strong id="room-id" class="room-code"></strong></div><button id="copy-code" class="button quiet compact">Copy code</button></div>
             <div class="invite-actions"><button id="copy-link" class="button primary">Copy invite link <span aria-hidden="true">↗</span></button><button id="qr-open" class="button secondary">QR code</button><button id="share-link" class="button secondary" hidden>Share</button></div>
+            <label class="sr-only" for="invitation-url">Invitation URL</label><input id="invitation-url" class="invitation-url" type="text" readonly aria-label="Invitation URL" spellcheck="false">
             <p id="local-link-warning" class="local-warning" hidden>This link uses localhost. To connect your phone, first open LANFLUX using your computer's local IP address. See Help.</p>
             <div class="room-footer"><span id="room-expiration" class="muted"></span><button id="leave-room" class="button quiet danger">Leave room</button></div>
           </div>
@@ -67,7 +68,7 @@
           <div class="device-pair"><div><span class="small-label">This device</span><strong id="local-device-name">My browser</strong></div><div><span class="small-label">Other device</span><strong id="peer-name">Not connected</strong></div></div>
           <div class="connection-status" aria-live="polite" aria-atomic="true"><span id="connection-status" class="status-label">Ready when you are</span><p id="connection-message">Create or join a room to get started.</p></div>
           <div class="route-row"><span>Connection route</span><strong id="connection-route">Not established</strong></div>
-          <p id="route-description" class="route-description">File contents travel over an encrypted WebRTC connection. The server only introduces the browsers.</p>
+          <p id="route-description" class="route-description">File contents travel over an encrypted WebRTC connection. Python handles signaling and measured network metadata.</p>
         </aside>
 
         <div id="transfers" class="sharing-column">
@@ -107,25 +108,30 @@
           <section class="panel network-panel" aria-labelledby="network-title"><div class="panel-top"><h3 id="network-title">Network diagnostics</h3><span class="state-label">WebRTC</span></div>
             <dl class="network-states"><div><dt>Signaling state</dt><dd id="state-signaling">Unavailable</dd></div><div><dt>ICE connection</dt><dd id="state-ice">Unavailable</dd></div><div><dt>Data channel</dt><dd id="state-channel">Unavailable</dd></div><div><dt>Connection setup</dt><dd id="state-setup">Unavailable</dd></div></dl>
             <div class="network-explainer"><h3>The route matters.</h3><p>A direct route connects the browsers. A TURN relay forwards their encrypted traffic. LANFLUX reports the detected route without guessing.</p></div>
-            <button id="inspect-connection" class="button secondary full" type="button">Inspect connection details</button><p class="field-description">Optional: may reveal private network addresses on this screen. These details are never included in exports.</p>
+            <button id="inspect-connection" class="button secondary full" type="button">Inspect connection details</button><p class="field-description">Optional: may reveal private network addresses on this screen. Hide them before sharing a screenshot.</p>
             <div id="ice-details-panel" class="ice-details" hidden><div class="panel-top"><h3>Selected ICE candidates</h3><button id="hide-ice-details" class="button quiet compact" type="button">Hide</button></div><p id="ice-details-message" class="muted"></p><pre id="ice-details"></pre></div>
           </section>
         </div>
+        <section id="ai-panel" class="panel ai-panel" aria-labelledby="ai-title">
+          <div class="panel-top"><div><p class="section-kicker">Experimental machine learning</p><h3 id="ai-title">AI Network Monitor</h3></div><span id="ai-model-status" class="state-label">Collecting training data</span></div>
+          <p id="ai-sample-count" class="small muted">0 / 30 baseline samples</p>
+          <dl class="session-metrics ai-metrics"><div><dt>Measured throughput</dt><dd id="ai-throughput">Unavailable</dd></div><div><dt>Measured latency</dt><dd id="ai-latency">Unavailable</dd></div><div><dt>ML prediction</dt><dd id="ai-prediction">Unavailable</dd></div><div><dt>Anomaly score</dt><dd id="ai-score">Unavailable</dd></div></dl>
+          <p id="ai-message" class="field-description" role="status">Connect two browsers to collect actual network measurements.</p>
+          <div class="ai-actions"><button id="ai-export" class="button secondary" type="button" disabled>Export real samples CSV ↓</button><button id="ai-reset" class="button quiet" type="button" disabled>Reset learning baseline</button></div>
+          <p class="measurement-note">IsolationForest learns from at least 30 real observations, then evaluates new samples. Positive scores indicate anomalies; scores are not probabilities. Experimental results can reflect workload changes and do not prove an attack.</p>
+          <p class="measurement-note ai-data-note">Only network metadata reaches Python, never files. Export before resetting: reset clears the baseline and sample history.</p>
+        </section>
       </section>
 
-      <section class="panel experiments-panel" aria-labelledby="experiments-title">
-        <div class="experiment-intro"><p class="section-kicker">Keep the evidence</p><h2 id="experiments-title">Turn a transfer into an experiment.</h2><p>Export finished transfer records with measured speeds, durations, routes, and integrity results. Files and private addresses stay out of the report.</p><span id="experiment-record-count" class="experiment-record-count">No finished records to export yet.</span></div>
-        <div class="experiment-controls"><label for="experiment-environment">Test conditions <span class="input-note">Entered by you</span></label><input id="experiment-environment" type="text" maxlength="120" placeholder="e.g. Same Wi-Fi, laptop to phone"><label for="experiment-notes">Experiment notes <span class="input-note">Optional</span></label><textarea id="experiment-notes" rows="2" maxlength="1000" placeholder="Add device, browser, or network details you observed."></textarea><p class="field-description">Conditions and notes are self-reported, not detected measurements.</p><div class="experiment-actions"><button id="export-report" class="button secondary" type="button" disabled>Export report <span aria-hidden="true">↓</span></button><button id="export-csv" class="button primary" type="button" disabled>Export CSV <span aria-hidden="true">↓</span></button></div></div>
-      </section>
     </main>
     <footer class="footer"><span>Less friction. More flow.</span><span id="memory-status">Received files stay in this browser.</span><button id="footer-help" class="text-link">How LANFLUX works <span aria-hidden="true">↗</span></button></footer>
   </div>
 
   <dialog id="confirmation-dialog" class="dialog" aria-labelledby="confirmation-title" aria-describedby="confirmation-description"><div class="dialog-heading"><h2 id="confirmation-title">Confirm action</h2><button id="confirm-cancel" class="button quiet compact" type="button" aria-label="Cancel action">×</button></div><p id="confirmation-description" class="muted"></p><div class="confirmation-actions"><button id="confirm-keep" class="button secondary" type="button">Keep sharing</button><button id="confirm-action" class="button primary" type="button">Confirm</button></div></dialog>
 
-  <dialog id="qr-dialog" class="dialog qr-dialog" aria-labelledby="qr-title">
+  <dialog id="qr-dialog" class="dialog qr-dialog" aria-labelledby="qr-title" aria-describedby="qr-description">
     <div class="dialog-heading"><h2 id="qr-title">Scan. Connect. Share.</h2><button class="button quiet compact" data-close="qr-dialog" aria-label="Close QR code">×</button></div>
-    <p class="muted">Scan with your phone's camera, then join the room.</p><div class="qr-image-wrap"><img id="qr-image" alt="QR code containing the invitation link" width="240" height="240"></div><p id="qr-room-code" class="qr-caption"></p><p id="qr-warning" class="local-warning" hidden>Open this page through your computer's local IP address before scanning from another device.</p><button id="qr-copy-link" class="button secondary full">Copy invitation link</button>
+    <p id="qr-description" class="muted">Scan with your phone's camera to join this room automatically. Incoming files still need your approval.</p><div class="qr-image-wrap"><img id="qr-image" alt="QR code containing the invitation link" width="240" height="240"></div><p id="qr-room-code" class="qr-caption"></p><p id="qr-warning" class="local-warning" hidden>A reachable LAN address could not be detected. Configure LANFLUX_PUBLIC_URL or open LANFLUX through your computer's LAN address.</p><button id="qr-copy-link" class="button secondary full">Copy invitation link</button>
   </dialog>
 
   <dialog id="settings-dialog" class="dialog" aria-labelledby="settings-title">
@@ -144,7 +150,7 @@
     <div class="help-item"><span class="help-number">2</span><div><h3>Pair with a private room</h3><p>Create a room and share its link, code, or QR. The second browser joins with a device name. Anyone with the link can join an empty slot, so share it privately.</p></div></div>
     <div class="help-item"><span class="help-number">3</span><div><h3>Choose, approve, and download</h3><p>Select files on either device. The receiver approves each file before it starts. Download received files before closing the tab or clearing history. Downloads are never saved on the server.</p></div></div>
     <div class="help-note"><h3>Connection &amp; browser support</h3><p>Use a recent Chrome, Edge, Firefox, or Safari. HTTPS is recommended, especially on mobile. Both tabs must stay open; mobile browsers may pause transfers in the background. Some Wi-Fi networks block devices from reaching each other.</p><p>WebRTC encrypts your transfer. A <strong>direct</strong> route connects the browsers; a <strong>TURN relay</strong> route carries encrypted traffic through a relay server. The connection panel shows the detected route.</p></div>
-    <div class="help-note"><h3>Integrity &amp; measurements</h3><p>LANFLUX computes a SHA-256 digest before sending, then verifies the received bytes before making a download available. A mismatch fails the transfer. This checks byte integrity; a peer-supplied digest does not authenticate who sent the file.</p><p>Network diagnostics measure payload throughput and WebRTC state. Export finished records as CSV or a readable report. Your entered test conditions are recorded separately from browser measurements.</p></div>
+    <div class="help-note"><h3>Integrity &amp; measurements</h3><p>LANFLUX computes a SHA-256 digest before sending, then verifies the received bytes before making a download available. A mismatch fails the transfer. This checks byte integrity; a peer-supplied digest does not authenticate who sent the file.</p><p>Network diagnostics measure payload throughput and WebRTC state. AI Network Monitor learns from real measured metadata and exports its observations as CSV. Its experimental predictions do not prove an attack. Export before resetting the baseline or leaving the room.</p></div>
     <p id="help-limits" class="muted">This version receives files in browser memory and uses a limited, sequential queue.</p>
     <p class="muted">Rooms expire automatically. Leave and create a new room if pairing fails. Relay connections require an administrator-configured TURN server.</p>
   </dialog>

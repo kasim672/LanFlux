@@ -151,7 +151,8 @@ export class LanfluxClient {
           this._joinReject = null;
           this._joinTimeout = null;
           this.initiator = Boolean(message.initiator);
-          this._emit({type: 'room', roomId: this.roomId, expiresAt: message.expires_at});
+          this._emit({type: 'room', roomId: this.roomId, expiresAt: message.expires_at, invitationUrl: message.invitation_url,
+            peerId: message.peer_id, telemetryToken: message.telemetry_token});
           this._status('waiting', 'Room ready. Invite one other device to connect.');
           resolve({room_id: this.roomId, expires_at: message.expires_at});
         }
@@ -506,7 +507,7 @@ export class LanfluxClient {
     if (message.protocolVersion !== 2 || !validHash(message.sha256)) {
       const transfer = this._newTransfer({id: message.id, name: safeName(message.name), size: message.size, direction: 'receive', status: 'approval-needed'});
       this.transfers.set(transfer.id, transfer);
-      this._integrityFailure(transfer, message.protocolVersion !== 2 ? 'Incompatible transfer protocol. Refresh both devices to use LANFLUX v0.2.' : 'The file offer is missing a valid SHA-256 checksum.');
+      this._integrityFailure(transfer, message.protocolVersion !== 2 ? 'Incompatible transfer protocol. Refresh both devices to the latest LANFLUX version.' : 'The file offer is missing a valid SHA-256 checksum.');
       return;
     }
     const pending = [...this.transfers.values()].filter(item => !TERMINAL.has(item.status)).length;

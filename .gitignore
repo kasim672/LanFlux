@@ -37,6 +37,32 @@ output/playwright/
 experiment-files/
 .playwright-cli/
 *.pem
+*.key
+*.p12
+*.pfx
+.env.*
+!.env.example
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.tox/
+.nox/
+.cache/
+coverage/
+test-results/
+playwright-report/
+output/
+artifacts/
+datasets/
+models/
+*.joblib
+*.pickle
+*.pkl
+lanflux-network*.csv
+network-predictions*.csv
+docs/internal/
+codex-clipboard-*
+*.har
 
 # Preserve the upstream source locally; no redistribution license was supplied.
 # These patterns do not untrack originals in an existing upstream checkout.

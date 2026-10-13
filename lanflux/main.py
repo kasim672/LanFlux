@@ -19,8 +19,13 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
+from aiml.api import attach_api
+
+from . import __version__
+
 from .config import Settings, origin, local_host
 from .logging import install_safe_logging
+from .network import LANDiscovery, invitation_base
 from .rooms import Peer, RateLimiter, RoomError, RoomManager, ROOM_ALPHABET, ROOM_LENGTH
 from .signals import signal_adapter
 
@@ -48,6 +53,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     manager = RoomManager(settings)
     limiter = RateLimiter()
+    discovery = LANDiscovery()
+
+    async def base_url(connection: Request | WebSocket) -> str:
+        scheme = connection.url.scheme.replace("wss", "https").replace("ws", "http")
+        request_origin = f"{scheme}://{connection.headers['host']}"
+        if settings.public_url:
+            return invitation_base(request_origin, settings.public_url)
+        address = await asyncio.to_thread(discovery.address)
+        return invitation_base(request_origin, settings.public_url, address)
 
     async def sweep() -> None:
         while True:
@@ -68,7 +82,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 room.expires_at = 0
             await manager.expire()
 
-    app = FastAPI(title="LANFLUX", version="0.2.0", lifespan=lifespan, docs_url=None, redoc_url=None)
+    app = FastAPI(title="LANFLUX", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.rooms = manager
     app.state.settings = settings
     app.state.limiter = limiter
@@ -109,6 +123,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Never trust an arbitrary X-Forwarded-For header; Uvicorn handles trusted proxies.
         return connection.client.host if connection.client else "unknown"
 
+    attach_api(app, manager, limiter, same_origin, client_ip, unique_object)
+
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
         if not trusted_host(request):
@@ -132,8 +148,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok", "service": "lanflux"}
 
     @app.get("/api/config")
-    async def config():
-        return settings.browser_config()
+    async def config(request: Request):
+        return {**settings.browser_config(), "invitation_base_url": await base_url(request)}
 
     @app.post("/api/rooms", status_code=201)
     async def create_room(request: Request):
@@ -142,10 +158,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not same_origin(request):
             raise HTTPException(403, "Open LANFLUX from the same website to create a room.")
         try:
-            room = await manager.create()
+            room = await manager.create(await base_url(request))
         except RoomError as exc:
             raise HTTPException(503, exc.message) from exc
-        return {"room_id": room.room_id, "expires_at": expires_iso(room.expires_at)}
+        return {"room_id": room.room_id, "expires_at": expires_iso(room.expires_at), "invitation_url": room.invitation_url}
 
     @app.get("/api/rooms/{room_id}/qr")
     @app.get("/api/rooms/{room_id}/qr.svg")
@@ -155,8 +171,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         room = manager.rooms.get(room_id)
         if not ROOM_PATTERN.fullmatch(room_id) or not room or room.expires_at <= time.time():
             raise HTTPException(404, "This room has expired or does not exist.")
-        base = settings.public_url or str(request.base_url).rstrip("/")
-        invitation = f"{base}/?room={room_id}"
+        invitation = room.invitation_url or f"{await base_url(request)}/?room={room_id}"
         if url is not None and url != invitation:
             raise HTTPException(400, "QR URL must match this room's invitation URL.")
         qr_image = qrcode.make(invitation, image_factory=qrcode.image.svg.SvgPathImage, box_size=8, border=3)
@@ -193,7 +208,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return
         try:
             if not await peer.send({"type": "welcome", "peer_id": peer.peer_id, "initiator": other is None,
-                                    "room_id": room_id, "expires_at": expires_iso(room.expires_at)}):
+                                    "room_id": room_id, "expires_at": expires_iso(room.expires_at),
+                                    "telemetry_token": peer.telemetry_token,
+                                    "invitation_url": room.invitation_url or f"{await base_url(websocket)}/?room={room_id}"}):
                 return
             if other:
                 if not await peer.send({"type": "peer-joined", "name": other.name, "pair_id": room.pair_id}):

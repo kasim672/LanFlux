@@ -933,6 +933,12 @@ input:focus {
   text-align:center
 }
 
+.invitation-url {
+  margin-top:12px;
+  font-size:12px;
+  color:var(--muted);
+}
+
 .qr-image-wrap {
   width:260px;
   max-width:100%;
@@ -1705,52 +1711,6 @@ h1 {
   font-size: 10px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
 }
-.experiments-panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-  gap: 58px;
-  padding: 29px 31px;
-  margin-bottom: 38px;
-}
-.experiment-intro h2 {
-  font-size: 22px;
-  margin: 7px 0 10px;
-  line-height: 1.3;
-  letter-spacing: -.6px;
-}
-.experiment-intro > p:last-of-type {
-  max-width: 42ch;
-  font-size: 12px;
-}
-.experiment-record-count {
-  display: block;
-  margin-top: 18px;
-  color: var(--accent);
-  font-size: 11px;
-}
-.experiment-controls label:first-child {
-  margin-top: 0;
-}
-.experiment-controls input,
-.experiment-controls textarea {
-  font-size: 12px;
-}
-.input-note {
-  color: var(--muted);
-  margin-left: 6px;
-  font-size: 10px;
-  font-weight: 400;
-}
-.experiment-actions {
-  display: flex;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 9px;
-  margin-top: 18px;
-}
-.experiment-actions .button {
-  font-size: 12px;
-}
 .confirmation-actions {
   display: flex;
   justify-content: flex-end;
@@ -1785,10 +1745,6 @@ h1 {
   .session-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px;
-  }
-  .experiments-panel {
-    gap: 30px;
-    padding: 25px;
   }
   .nav-session {
     display: none;
@@ -1890,20 +1846,6 @@ h1 {
   .performance-primary strong {
     font-size: 22px;
   }
-  .experiments-panel {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 23px;
-    padding: 23px;
-  }
-  .experiment-intro h2 {
-    font-size: 22px;
-  }
-  .experiment-actions {
-    justify-content: flex-start;
-  }
-  .input-note {
-    font-size: 9px;
-  }
 }
 @media (max-width: 359px) {
   .performance-primary strong {
@@ -1929,5 +1871,299 @@ h1 {
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+}
+.ai-panel { margin-top: 20px; padding: 24px; }
+.ai-panel .panel-top { margin-bottom: 16px; }
+.ai-metrics { margin-block: 20px; }
+.ai-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+.ai-panel[data-prediction="Anomaly"] #ai-prediction { color: #ffbb88; }
+.ai-panel[data-prediction="Normal"] #ai-prediction { color: var(--accent); }
+@media (max-width: 600px) {
+  .ai-panel { padding: 18px; }
+  .ai-panel .panel-top { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .ai-actions .button { width: 100%; }
+}
+
+/* Final surface polish: shared rhythm and readable operational details. */
+:root {
+  font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system,
+    BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  font-optical-sizing: auto;
+}
+p {
+  text-wrap: pretty;
+}
+.hero-description {
+  line-height: 1.75;
+}
+.panel {
+  box-shadow: inset 0 1px 0 #bddac305;
+}
+.pairing-panel {
+  box-shadow: inset 0 1px 0 #bddac307, 0 18px 48px #07120b25;
+}
+.nav-link {
+  font-size: 13px;
+}
+.section-heading h2 {
+  font-size: 15px;
+}
+.connection-panel .status-label {
+  font-size: 13px;
+}
+.drop-zone {
+  padding-top: 30px;
+  padding-bottom: 25px;
+}
+.drop-zone > p {
+  font-size: 13px;
+}
+.empty-state {
+  padding: 20px;
+}
+.empty-state strong {
+  font-size: 13px;
+}
+.empty-state p,
+.completed-empty {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.completed-empty {
+  padding-top: 7px;
+}
+.transfer-list {
+  gap: 12px;
+}
+.transfer-card.hashing,
+.transfer-card.verifying {
+  border-color: #496f59;
+}
+.transfer-card.failed {
+  border-color: #6a4742;
+}
+.transfer-card progress {
+  height: 6px;
+}
+.transfer-metrics dt,
+.transfer-metrics dd,
+.transfer-details,
+.transfer-inspection summary,
+.speed-chart figcaption,
+.measurement-note,
+.session-metrics dt,
+.metric-secondary,
+.field-description {
+  font-size: 11px;
+}
+.transfer-metrics dd {
+  line-height: 1.6;
+}
+.transfer-inspection {
+  padding-top: 1px;
+}
+.inspection-metrics {
+  gap: 10px;
+  padding: 15px;
+}
+.inspection-metrics dt {
+  line-height: 1.6;
+}
+.performance-panel .panel-top,
+.network-panel .panel-top {
+  margin-bottom: 24px;
+}
+.session-metrics dd {
+  font-size: 13px;
+}
+.measurement-note {
+  line-height: 1.75;
+  max-width: 85ch;
+}
+.network-states dd {
+  color: #d0e0d6;
+}
+.invitation-url {
+  margin-top: 13px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+}
+input[readonly] {
+  border-color: #374b3e;
+  color: #bfd5c7;
+  background: #142019;
+  cursor: text;
+}
+.dialog {
+  box-shadow: inset 0 1px 0 #c5e0ce0c, 0 28px 90px #06100999;
+}
+.dialog-heading {
+  margin-bottom: 12px;
+}
+.dialog-heading h2 {
+  line-height: 1.35;
+  text-wrap: balance;
+}
+.dialog-heading .button {
+  flex-shrink: 0;
+}
+.dialog .muted {
+  line-height: 1.75;
+}
+.qr-image-wrap {
+  margin-top: 24px;
+  margin-bottom: 16px;
+  border: 4px solid #f9fcfa;
+  box-shadow: 0 12px 30px #07120c25;
+}
+.qr-caption {
+  line-height: 1.7;
+  color: #d3e8da;
+}
+.ai-panel {
+  margin-top: 24px;
+  padding: 27px;
+}
+.ai-panel .panel-top {
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 17px;
+}
+.ai-panel h3 {
+  margin-top: 5px;
+  font-size: 18px;
+  letter-spacing: -.3px;
+}
+#ai-model-status {
+  padding: 5px 9px;
+  border: 1px solid #3e5546;
+  border-radius: 6px;
+  background: #24362b;
+  line-height: 1.5;
+  font-size: 11px;
+}
+#ai-sample-count {
+  font-size: 12px;
+  color: #b6c9be;
+}
+.ai-metrics {
+  margin-top: 22px;
+  margin-bottom: 21px;
+}
+.ai-metrics dt {
+  font-size: 12px;
+}
+.ai-metrics dd {
+  font-size: 16px;
+  font-weight: 550;
+}
+.ai-actions {
+  margin-top: 19px;
+  gap: 10px;
+}
+.ai-actions .button {
+  font-size: 12px;
+}
+.ai-data-note {
+  margin-top: 12px;
+  padding: 12px 15px;
+  border-left: 2px solid #4f7d5d;
+  background: #23322855;
+  border-radius: 0 7px 7px 0;
+}
+.ai-panel[data-prediction="Anomaly"] {
+  border-color: #715047;
+}
+.ai-panel[data-prediction="Anomaly"] #ai-model-status {
+  color: var(--danger);
+  border-color: #78534b;
+  background: #3b2b26;
+}
+.ai-panel[data-prediction="Anomaly"] #ai-prediction {
+  color: var(--danger);
+}
+@media (max-width: 767px) {
+  .nav-link {
+    font-size: 12px;
+  }
+  .drop-zone {
+    padding: 27px 18px 22px;
+  }
+  .drop-zone > p {
+    font-size: 12px;
+  }
+  .section-heading {
+    align-items: flex-start;
+  }
+  .section-heading h2 {
+    font-size: 14px;
+    padding-top: 5px;
+  }
+  .section-heading .small {
+    padding-top: 7px;
+  }
+  .diagnostics-heading h2 {
+    font-size: 23px;
+    padding-top: 0;
+  }
+  .performance-panel,
+  .network-panel {
+    padding: 22px;
+  }
+  .transfer-metrics {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .transfer-metrics > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .transfer-metrics dt,
+  .transfer-metrics dd {
+    font-size: 11px;
+  }
+  .transfer-metrics dd {
+    margin-top: 0;
+    text-align: right;
+  }
+  .transfer-actions .button {
+    min-height: 38px;
+  }
+  .inspection-metrics {
+    padding: 12px;
+  }
+  .session-metrics {
+    gap: 20px 15px;
+  }
+  .ai-panel {
+    padding: 22px;
+  }
+  .ai-panel .panel-top {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .ai-metrics dd {
+    font-size: 14px;
+  }
+  .ai-data-note {
+    padding: 11px 13px;
+  }
+}
+@media (max-width: 359px) {
+  .performance-panel,
+  .network-panel,
+  .ai-panel {
+    padding: 18px;
+  }
+  .performance-primary {
+    gap: 12px;
+  }
+  .performance-primary strong {
+    font-size: 18px;
+  }
+  .session-metrics dd {
+    font-size: 12px;
   }
 }

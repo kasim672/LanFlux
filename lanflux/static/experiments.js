@@ -39,7 +39,7 @@ export function experimentRecords(transfers,options={}) {
 export function buildExperimentReport(transfers,options={}) {
   const records = experimentRecords(transfers,options);
   const lines = [
-    'LANFLUX 0.2 — observed networking measurements',
+    'LANFLUX 0.3.0 — observed networking measurements',
     `Generated: ${new Date().toISOString()}`,
     `Recorded terminal transfers: ${records.length}`,
     `Environment label (entered by user): ${cleanText(options.environmentLabel,120) || 'Not supplied'}`,

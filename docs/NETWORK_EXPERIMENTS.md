@@ -7,7 +7,21 @@ This procedure collects observations from actual browser transfers. No benchmark
 1. Generate fixtures from the repository root: `python scripts/generate_test_files.py`. It creates `lanflux-1MiB.bin`, `lanflux-10MiB.bin`, `lanflux-50MiB.bin` and `sha256.json` in ignored `experiment-files/`. Python hashes bounded chunks independently; files are 1,048,576, 10,485,760 and 52,428,800 bytes. Existing files are preserved; use `--output ANOTHER_FOLDER` for fresh fixtures.
 2. Start `python -m lanflux --lan --port 8000` on a trusted LAN. Open the computer's LAN URL on both devices. Configure HTTPS/WSS and suitable TURN if comparing internet networks.
 3. Note the actual devices, browsers/versions, Wi-Fi band, distance, router, other traffic, VPN status, power mode and network condition. Do not infer link capacity from observed application throughput.
-4. Pair the browsers. Check Network diagnostics for actual route and state. Enter your conditions in “Test conditions” and run/direction information in “Experiment notes”. These descriptions are self-reported.
+4. Pair the browsers. Check Network diagnostics for actual route and state. Record your conditions and run/direction information separately, or supply them to the developer export helpers below. These descriptions are self-reported.
+
+## Save observations with developer tools
+
+Record values from Network diagnostics and Transfer details manually, or use the tested local export helpers through the browser developer console:
+
+```javascript
+const {experimentsToCsv, buildExperimentReport, downloadText} = await import('/static/experiments.js');
+const conditions = {environmentLabel: 'Same Wi-Fi, laptop to phone', notes: '1 MiB, run 1'};
+downloadText(experimentsToCsv(window.lanfluxClient.transfers, conditions), 'lanflux-run.csv', 'text/csv');
+// Alternatively download a human-readable report:
+// downloadText(buildExperimentReport(window.lanfluxClient.transfers, conditions), 'lanflux-run.txt');
+```
+
+Replace the example descriptions with your actual conditions. These calls export existing terminal records, not fabricated measurements. Export before clearing finished records. Mobile browsers may require connected developer tools; manual recording remains an option.
 
 ## Run a condition
 
@@ -29,7 +43,7 @@ Repeat the procedure in the reverse direction. For comparison conditions, vary o
 
 Configure a real relay using `.env.example`, manage relay credentials properly, and create a **new room** after selecting “Relay only” in Settings. Confirm Network diagnostics reports **TURN relay** from the selected candidate pair. If no relay route is observed, label the route unavailable or record the failure; do not assume a relay based on settings alone. TURN adds another network/service path and may be limited by that service, geography or quotas.
 
-Remote connectivity can fail without a suitable relay. No TURN service or external network has been tested in this workspace.
+Remote connectivity can fail without a suitable relay. Automated loopback verification does not establish TURN or external-network performance.
 
 ## Interpret the exports
 

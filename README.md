@@ -1,16 +1,130 @@
-# LANFLUX 0.2
+<div align="center">
 
-LANFLUX shares files between two browsers through an encrypted WebRTC DataChannel. A small Python FastAPI server creates temporary rooms and relays signaling; **file contents and transfer metadata never pass through that server**. No app installation or frontend build is required.
+<img src="lanflux/static/favicon.svg" width="64" alt="LANFLUX logo">
 
-Create a room, invite your other device by code/link/QR, and approve each incoming file. Both devices can send. Version 0.2 preserves the existing sequential queues, cancellation and downloads, adds actual SHA-256 verification, tightens room/signaling security, and introduces measured network diagnostics and downloadable experiment reports.
+# LANFLUX
 
-![Actual LANFLUX desktop interface](docs/screenshots/desktop.png)
+### AI-Powered Peer-to-Peer File Sharing
 
-[Mobile interface](docs/screenshots/mobile.png) · [Network diagnostics](docs/screenshots/network.png) · [Verification report](docs/VERIFICATION.md)
+**Share between browsers. Verify every file. Observe the network.**
 
-## Start locally
+[![CI](https://github.com/kasim672/LanFlux/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kasim672/LanFlux/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/version-0.3.0-80dfc2)](CHANGELOG.md)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](requirements.txt)
+[![WebRTC](https://img.shields.io/badge/transport-WebRTC-6978ef)](#architecture)
+[![IsolationForest](https://img.shields.io/badge/ML-IsolationForest-f0bd76)](aiml/model.py)
 
-Python **3.10+**. From the repository root on Linux or macOS:
+[Quick start](#quick-start) · [Phone pairing](#pair-your-phone) · [AI monitor](#ai-network-monitor) · [Tests](#testing-and-evaluation)
+
+</div>
+
+![LANFLUX homepage, captured from the running application](docs/screenshots/homepage.png)
+
+## Overview
+
+LANFLUX connects two browsers through an encrypted WebRTC DataChannel. Create a temporary room, scan its QR invitation, approve a file, and download the verified result. Either device can send; no desktop app, account or frontend build is required.
+
+Python handles room management, signaling and experimental network analysis. **File contents, filenames and SHA-256 digests stay between browsers.** The AI monitor learns from real session measurements and flags observations that differ from its baseline; it does not inspect files or control transfers.
+
+## Features
+
+| Sharing | Trust and visibility |
+| --- | --- |
+| Room codes, matching QR/copy invitations and automatic link joining | Explicit receiver approval before any file payload |
+| Bidirectional sharing with independent sequential queues | Incremental SHA-256 over original and received bytes |
+| Desktop drag-and-drop and mobile file selection | Clear verified, rejected, cancelled and failed states |
+| Chunked transfers with DataChannel backpressure | Measured throughput, RTT and connection state |
+| Downloads and bounded in-memory retention | Direct/TURN labels based on observed ICE statistics |
+| Responsive dark interface and keyboard-accessible controls | Session-local IsolationForest predictions and real-data CSV export |
+
+### Desktop and mobile
+
+<table>
+  <tr>
+    <td width="76%"><img src="docs/screenshots/desktop.png" alt="Connected desktop dashboard with actual completed transfers"></td>
+    <td width="24%"><img src="docs/screenshots/mobile.png" alt="LANFLUX at a narrow mobile viewport"></td>
+  </tr>
+</table>
+
+These screenshots come from real Chromium/WebRTC scenarios. Room capabilities and invitation addresses are masked; measured values and transfer results are unchanged. The mobile image demonstrates a browser viewport, not a physical-phone test.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A[Browser A] <-->|Room, SDP and ICE · WebSocket| S[Python · FastAPI]
+    B[Browser B] <-->|Room, SDP and ICE · WebSocket| S
+    A <-->|Approved file chunks · encrypted DataChannel| B
+    A -.->|Network metadata only| S
+    B -.->|Network metadata only| S
+    S --> ML[Session-local IsolationForest]
+    ML -->|Status and predictions| S
+    A -.->|Connectivity discovery| STUN[STUN]
+    B -.->|Connectivity discovery| STUN
+    A <-->|Optional encrypted relay| TURN[TURN]
+    TURN <-->|Optional encrypted relay| B
+```
+
+The server validates signaling and pairs at most two peers per temporary room. Browsers exchange an offer, answer and ICE candidates, then open a reliable, ordered DataChannel. STUN helps discover connectivity. When required, TURN relays encrypted WebRTC traffic; Python still does not receive file data. The route stays **Unavailable** until statistics support a direct or relay classification.
+
+## File-sharing workflow
+
+1. **Create** a room and share its code, link or QR invitation.
+2. **Join** from another browser. Invitation links automatically join the specified room.
+3. **Select** files. LANFLUX incrementally hashes each original file.
+4. **Approve** the incoming offer on the receiving device, or reject it.
+5. **Transfer** bounded chunks while observing progress and real throughput.
+6. **Verify and download** after the receiver checks the exact byte count and SHA-256 digest.
+
+![Actual connected-device panel, with the temporary room capability masked](docs/screenshots/connected-devices.png)
+
+![Actual received file with verified SHA-256 integrity](docs/screenshots/verified-transfer.png)
+
+Both peers can cancel. Leaving, reloading or a broken connection stops unfinished transfers cleanly. Select the file again to restart; automatic resume is not implemented.
+
+## AI Network Monitor
+
+![IsolationForest trained on actual browser network observations](docs/screenshots/ai-monitor.png)
+
+Open **Network diagnostics → AI Network Monitor** after pairing. Collection starts automatically, approximately once per second, using observed payload throughput in **Mbps**, DataChannel ping/pong **RTT in ms**, and an active-transfer indicator. Missing RTT and suspended sampling intervals are skipped.
+
+The panel shows **Collecting training data** until it has at least **30 observations**, **25 seconds of session time**, and **three distinct feature combinations**. A 64-tree scikit-learn IsolationForest then freezes its baseline and predicts on later observations. A positive anomaly score means **Anomaly**; zero or negative means **Normal**. The score is not a probability.
+
+### Demonstrate it
+
+1. Pair two foreground browser tabs and transfer several representative files while learning.
+2. Wait for **Trained · IsolationForest**. Watch actual throughput, RTT, predictions and scores as more observations arrive.
+3. Compare steady operation with an observed network or workload change. An anomaly is not guaranteed; retain normal results too.
+4. Collect at least **40 rows**, then choose **Export real samples CSV** while connected.
+5. Evaluate the exported data using a chronological baseline and holdout:
+
+```bash
+python -m aiml.evaluate /path/to/lanflux-network.csv --output network-predictions.csv
+```
+
+The CLI prints a report and writes holdout predictions to a new CSV. It never generates a training dataset. **Reset learning baseline** deletes the current peer's records and model; disconnecting also clears them. Each monitor retains at most 600 rows in memory.
+
+This is an experimental unsupervised detector. Browser scheduling, file hashing, idle periods and harmless workload changes can affect results. There are no ground-truth anomaly labels, so accuracy, precision and recall are unavailable. A prediction is neither proof of an attack nor an independent measurement of link capacity. See [algorithm, access controls and evaluation details](docs/AI_MONITOR.md).
+
+## Technology stack
+
+| Layer | Implementation |
+| --- | --- |
+| Server | Python 3.10+, FastAPI, Uvicorn and WebSockets |
+| Browser | HTML, CSS and native JavaScript; no frontend framework |
+| Transport | WebRTC RTCPeerConnection and RTCDataChannel; optional STUN/TURN |
+| Integrity | Pinned, licensed @noble/hashes incremental SHA-256 |
+| AI/ML | scikit-learn IsolationForest with session-local real observations |
+| Verification | pytest, Node test runner and Playwright Chromium |
+
+## Quick start
+
+```bash
+git clone https://github.com/kasim672/LanFlux.git
+cd LanFlux
+```
+
+**Linux / macOS**
 
 ```bash
 python3 -m venv .venv
@@ -19,9 +133,7 @@ python -m pip install -r requirements.txt
 python -m lanflux
 ```
 
-Open **http://localhost:8000**. Health: **http://localhost:8000/health**. The default binds only `127.0.0.1`; it does not expose the development server to your network.
-
-Windows PowerShell (no activation-policy changes needed):
+**Windows PowerShell** — activation is optional:
 
 ```powershell
 py -3 -m venv .venv
@@ -29,179 +141,90 @@ py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m lanflux
 ```
 
-For the prepared environment in this workspace, use `.venv/bin/python -m lanflux`. Use this entry point, rather than the preserved legacy root `app.py` or Pipfile.
+Open **http://localhost:8000**. The default listens on the computer only. Health endpoint: **http://localhost:8000/health**. Node/npm is required only for development tests, not for running LANFLUX.
 
-## Share on local Wi-Fi
+## Pair your phone
 
-Explicitly enable LAN listening:
+Start the server with explicit local-network access:
 
 ```bash
 python -m lanflux --lan --port 8000
 ```
 
-Without activation: `.venv/bin/python -m lanflux --lan --port 8000`. Windows: `.\.venv\Scripts\python.exe -m lanflux --lan --port 8000`.
+On Windows, use `.\.venv\Scripts\python.exe -m lanflux --lan --port 8000`.
 
-1. Connect both devices to the same trusted Wi-Fi. Keep the browser tabs foregrounded; avoid guest-network isolation and blocking VPNs.
-2. Find the computer's Wi-Fi IPv4 address with `ipconfig` (Windows), `hostname -I` (Linux), or `ipconfig getifaddr en0` (macOS; adapter names vary).
-3. Open **http://YOUR-COMPUTER-IP:8000** on **both** devices, for example `http://192.168.1.42:8000`. Creating the room using this address makes its invitation/QR reachable from your phone. A phone's `localhost` means the phone itself.
-4. Create a room, join on the other device, and wait for “Connected and ready”. Select a file, approve it on the receiver, wait for **Integrity Verified**, and download it. Repeat in the other direction.
-5. Test decline/cancel, multiple queued files, and peer departure. Download and export records before clearing finished files.
+1. Connect the computer and phone to the same trusted Wi-Fi and keep both tabs foregrounded.
+2. Open **http://localhost:8000** on the computer and create a room.
+3. Scan the QR invitation on the phone. LANFLUX discovers a physical adapter's private IPv4 address and preserves the port; Docker, VPN and virtual adapters are excluded. QR, Copy Link and the displayed URL use the same invitation.
+4. The phone automatically joins. Wait for **Connected and ready**, then send a file and approve it on the other device.
+5. Download the verified file and repeat in the reverse direction.
 
-Allow Python/port 8000 through the computer's firewall on **private networks**. If the page cannot load, check the address, firewall and client isolation. If pages load but peers cannot connect, check the connection states in Network diagnostics and try another network or configured TURN relay.
+Allow Python/port 8000 through the firewall on private networks. If adapter discovery is unavailable or another physical network is selected, copy `.env.example` to `.env`, set `LANFLUX_PUBLIC_URL` to your actual browser-reachable origin, restart, and create a new room. Opening the computer's LAN URL before creating a room also preserves that origin. No LAN address is hardcoded.
 
-Trusted LAN HTTP remains supported where the browser exposes WebRTC: incremental hashing does not require Web Crypto or a secure context. Browser policies differ; use trusted HTTPS if WebRTC is unavailable. HTTP signaling can be intercepted or modified, so use **HTTPS/WSS for untrusted networks and internet deployment**. Local HTTP does not establish an authenticated sender identity.
+Local HTTP works where the browser exposes WebRTC; hashing does not require Web Crypto. Use **HTTPS/WSS** for untrusted networks and internet deployment. Public hosting requires a reverse proxy, exact trusted origins, one Python worker and, for restrictive networks, a suitable TURN relay. Browser-visible TURN credentials need expiration and quotas; this version does not issue or rotate them. See [configuration and deployment](docs/CONFIGURATION.md).
 
-## Architecture and protocol
+## Network diagnostics and integrity
 
-```mermaid
-flowchart LR
-    A[Browser A] <-->|Room pairing and SDP / ICE over WebSocket| S[Python FastAPI signaling]
-    B[Browser B] <-->|Room pairing and SDP / ICE over WebSocket| S
-    A <-->|Approved chunks and SHA-256 metadata over encrypted DataChannel| B
-    A -.->|Discovery| STUN[STUN]
-    B -.->|Discovery| STUN
-    A <-->|Optional encrypted relay| TURN[TURN]
-    TURN <-->|Optional encrypted relay| B
+![Real WebRTC connection and transfer measurements](docs/screenshots/network.png)
+
+Diagnostics shows signaling, ICE and DataChannel states; observed direct/TURN routing; setup time; current/average throughput; transferred bytes; duration; ETA; and explicit DataChannel ping/pong RTT. A bounded 60-point chart tracks throughput. Unobserved or unsupported metrics display **Unavailable**. Private ICE details appear only after an explicit inspection action and stay out of exported network records.
+
+File sizes use **MiB** (1,048,576 bytes); rates use decimal **MB/s** and **Mbps**. RTT includes browser scheduling and channel queueing. Sender counters measure payload handed to the DataChannel; receiver counters measure accepted payload. Verified completion confirms receipt. Short transfers may finish before a peak-speed sample is available.
+
+**Integrity Verified** requires SHA-256 over actual received bytes to match the sender's digest and announced length, including empty files. Missing or corrupted bytes fail without a successful download. Hashing uses bounded slices without an extra complete file copy. A hash match proves byte integrity relative to the peer's metadata, not the sender's real-world identity or the safety of the file.
+
+Room links are private bearer capabilities. LANFLUX uses unpredictable room IDs, two-peer membership, expiration, Origin/Host checks, signaling validation, rate limits and text-only filename rendering. AI endpoints additionally require a per-peer bearer token and live room membership. Files are never uploaded to or stored by FastAPI.
+
+### Practical limits
+
+- **64 MiB per file**, **128 MiB reserved/retained receive payload**, 20 active/queued files and 100 retained transfer records. Blob overhead can require additional memory; lower limits on constrained devices.
+- Downloads remain in the current tab until cleared or reloaded. Save files first. No streaming-to-disk, folders, persistent accounts or automatic resume.
+- Two peers per room; process-local rooms and models require **one server worker**. Restarting clears rooms.
+- Backgrounded or sleeping mobile browsers may suspend transfers. Current Chrome/Edge/Firefox/Safari are targets; automated coverage is Chromium, including narrow viewport layouts.
+
+## Testing and evaluation
+
+Verified locally for this release: **117 Python tests**, **41 JavaScript unit tests**, and **15 real Chromium scenarios plus their parent test**. Scenarios exercise actual downloaded bytes, QR/link joining, approval, queues, rejection, cancellation, corruption, interruption, SHA-256, responsive layouts, diagnostics and real-observation AI learning/export/reset.
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+npm ci --ignore-scripts
+npx playwright install chromium
+npm run test:unit
+npm run test:e2e
+python scripts/check_frontend.py
+python scripts/check_release.py --self-test
+python scripts/check_release.py
 ```
 
-```mermaid
-sequenceDiagram
-    participant A as Browser A
-    participant S as FastAPI
-    participant B as Browser B
-    A->>S: Create temporary room
-    A->>S: Join via WebSocket + Origin
-    B->>S: Join with room capability + Origin
-    S->>A: Peer joined + fresh pair ID
-    S->>B: Peer joined + fresh pair ID
-    A->>S: Offer / ICE + pair ID
-    S->>B: Validated offer / ICE
-    B->>S: Answer / ICE + pair ID
-    S->>A: Validated answer / ICE
-    Note over A,B: Ordered reliable encrypted WebRTC DataChannel opens
-    A->>A: Incrementally hash original file
-    A->>B: File offer + size + SHA-256 + protocol v2
-    B->>A: Explicit acceptance
-    A->>B: ID-prefixed bounded binary chunks
-    B->>B: Incrementally hash actual received bytes
-    A->>B: Finish
-    B->>B: Require exact length and matching digest
-    B->>A: Verified completion + actual digest
-    Note over B: Create download only after verification
-```
+Use Node **24** for the development suite. CI tests Python 3.10/3.12, JavaScript, Chromium sharing and evaluation of the browser's actual exported CSV. [Verification details](docs/VERIFICATION.md) distinguish automated coverage from physical-device, other-engine and TURN tests that remain unverified for this release.
 
-Each direction has an independent sequential queue. Reliable ordered delivery, 16 KiB maximum payload chunks, transfer IDs and DataChannel backpressure prevent file mixing and buffer overload. Negotiated SCTP message-size limits reduce chunk sizes when needed; unusually small capabilities that would violate bounded receive-buffer overhead fail clearly. Cancellation, timeouts, malformed controls, disconnection and reload stop unfinished transfers. Restart by selecting the file again; automatic resume is not implemented. Both devices must refresh to v0.2: v1 offers without checksums are rejected.
-
-## Integrity and security model
-
-The sender hashes bounded **256 KiB slices** before offering the file. The receiver incrementally hashes the **actual received bytes**, checks the exact announced length, and compares SHA-256 before allocating a download Blob or acknowledging completion. Empty files are verified too. Missing/corrupted bytes or an unavailable hash engine cause failure, discard the receive buffers, and produce no successful download. Cancellation during hashing or verification cannot resurrect the transfer. Hashing is synchronous within each bounded slice and yields between sender slices, so smaller files remain preferable on low-memory phones.
-
-The browser includes the pinned, unmodified incremental implementation from **@noble/hashes 2.4.0**, with its MIT license, recorded SHA-256 source checksums and independent known-answer tests. See [vendor provenance](lanflux/static/vendor/noble-hashes/README.md). Web Crypto's [digest API](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest) requires a secure context and a complete input buffer; LANFLUX does not use it for file hashing or make an extra complete file copy for hashing.
-
-SHA-256 metadata is bound to the established encrypted WebRTC channel, **not to a verified real-world person**. A matching digest proves transferred-byte integrity relative to the sending peer's metadata. A malicious peer can supply its own file and matching hash. Confirm the other device and share room links privately; room codes are bearer capabilities, not accounts. HTTP signaling or a compromised signaling service can undermine peer authentication. HTTPS protects the signaling path, but this MVP does not implement a separate out-of-band fingerprint check.
-
-Server protections include:
-
-- Cryptographic 16-character room identifiers, exactly two peers, one-hour default absolute expiration, empty-room cleanup, and configurable idle-peer cleanup (default 60 seconds; clients heartbeat every five seconds).
-- Strict canonical same-origin WebSocket checks, including scheme/host/port and IPv6; additional origins must be explicitly configured. Missing/null/malformed/duplicate Origin headers are rejected.
-- Host validation permits localhost, legitimate private/loopback addresses, unqualified LAN names and `.local`; public/custom DNS names require exact configured trust. Arbitrary public Host names are rejected. Default ports are normalized; trusted hosts and allowed origins are separate controls.
-- Per-client room creation **10/minute**, join attempts **30/minute**, QR requests **60/minute**, and per-peer signaling **180/minute**. Bounded room/peer/rate-limit state; signaling size and strict schema validation; duplicate JSON fields, binary signaling and unexpected negotiation transitions rejected.
-- Server-owned peer roles and fresh pair IDs on replacement; stale SDP/ICE cannot authorize a new pairing. The room socket binds peer identity to membership. Peer names are labels, not authentication.
-- A self-hosted frontend, restrictive content/security headers, safe filename normalization and text-only rendering. No upload, arbitrary filesystem or remote-command routes.
-- The recommended CLI disables access logging and filters sensitive room paths/query strings and WebSocket debug frame dumps. No full SDP/ICE payloads or file data are intentionally logged. External proxies must also redact room paths/query strings.
-
-An authorized peer can still cause denial of service or send unwanted content. Do not treat receipt as proof that a file is safe to execute. Public deployments require edge-level abuse controls; the in-process limits are intended for this small application.
-
-## Real network diagnostics and experiments
-
-Network diagnostics displays WebSocket/ICE/DataChannel states, selected route, payload throughput, active transfer duration, remaining-time estimate, connection setup time and **explicit DataChannel ping/pong RTT**. One-second samples feed a bounded **60-point** chart. Metrics unsupported by the browser or not yet observed display **Unavailable**. Private ICE addresses appear only after **Inspect connection details**, stay on that screen, and are excluded from reports. Hide them before sharing screenshots.
-
-Route detection uses a successful, unambiguous selected candidate pair from [RTCPeerConnection.getStats()](https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/getStats). **Direct** requires known non-relay candidates; **TURN relay** means encrypted file traffic passes through a relay. Unknown statistics are not proof of directness. STUN discovers connectivity and does not relay file contents.
-
-Units and timing:
-
-- Sizes use **MiB = 1,048,576 bytes**. Rates use decimal **MB/s = bytes/s ÷ 1,000,000**, and **Mbps = bytes/s × 8 ÷ 1,000,000**.
-- Sender payload bytes count data handed to the DataChannel; receiver bytes count accepted file payload. These observations exclude frame headers and are not proof of delivered bytes until verified completion.
-- Per-file duration runs from acceptance/start until verified completion (including the acknowledgement on the sender). SHA-256 prehash and time waiting for human approval are excluded. Average throughput uses observed bytes/duration; failure records can include partial data.
-- Setup runs from peer pairing until DataChannel open; later transfers on the same connection retain that setup observation. It excludes time waiting for someone to join the room.
-- Current/peak speed uses complete sample intervals. A short transfer may have **Unavailable** peak speed. Dashboard average/duration aggregate the union of active send/receive intervals, excluding idle gaps; duplex rates sum observed bytes in both directions.
-- RTT includes browser scheduling and DataChannel queueing; it is an application round trip, not an ICMP ping or a pure propagation delay. ETA is approximate and unavailable without a positive observed rate.
-
-Export real terminal transfer records as a human-readable report or CSV. Exports contain file size, payload bytes, setup/duration, average/peak Mbps, result/reason, digests, verification and observed route. Conditions/notes are explicitly user-entered. CSV escapes spreadsheet formulas. Exports remain local; no telemetry is uploaded.
-
-Generate fixtures with Python (files are below the configured limits):
+For reproducible network experiments, generate **1, 10 and 50 MiB** fixtures:
 
 ```bash
 python scripts/generate_test_files.py
 ```
 
-This creates **1, 10 and 50 MiB** random binary files plus their independent Python SHA-256 digests in ignored `experiment-files/`. It does not measure networking or overwrite existing fixtures. Follow the [reproducible experiment methodology](docs/NETWORK_EXPERIMENTS.md): three actual runs per size, export collected records, and compare Wi-Fi conditions or a real TURN relay without inventing results.
+Run each size three times per condition and direction, clearing saved receives between large runs. Record all outcomes, observed route, duration, throughput and integrity result. The [experiment methodology](docs/NETWORK_EXPERIMENTS.md) includes local report/CSV helpers and a TURN comparison procedure. No Wi-Fi benchmark or anomaly accuracy result is bundled.
 
-## Limits and compatibility
+## Troubleshooting
 
-Default limits remain **64 MiB/file**, **128 MiB reserved/retained receive payload**, **20 active/queued files**, and **100 retained transfer records**. Completed downloads count toward memory until cleared. Blob/download internals and buffer overhead can consume additional memory beyond payload limits; there is no streaming-to-disk support. Lower limits using `.env` on low-memory phones. Download/export before clearing or closing the tab. Leaving a room preserves completed downloads in the current tab; reload/navigation removes them.
-
-Targets current Chrome/Edge/Firefox/Safari and Android Chrome/iOS Safari with WebRTC DataChannels. Chromium automated checks and mobile viewport emulation do not establish Safari/Firefox or physical-phone compatibility. The user reported successful computer↔phone testing of v0.1; **v0.2 still needs that physical-device regression**. Backgrounding, sleep or locking a mobile browser can suspend transfers and trigger cleanup. Downloads on iOS may use a preview/share sheet.
-
-No folders, accounts, resumable transfers, persistent history or more than two peers. Restarting Python loses rooms. Use **one worker**: rooms/signaling are process-local. No TURN service is bundled; restrictive NATs/firewalls or isolated Wi-Fi can prevent connectivity without a suitable relay.
-
-## Configuration and deployment
-
-Copy `.env.example` to `.env`; `python -m lanflux` loads it automatically. Alternatively use `--env-file PATH`. Run `python -m lanflux --help` for bind/port/TLS options. The example contains no real secrets.
-
-| Environment variable | Purpose |
+| Symptom | Check |
 | --- | --- |
-| `LANFLUX_PUBLIC_URL` | Browser-visible origin for invitation/QR links, e.g. `https://share.example.com` |
-| `LANFLUX_ALLOWED_ORIGINS` | Additional exact HTTP(S) browser origins, comma-separated, no paths/wildcards |
-| `LANFLUX_TRUSTED_HOSTS` | Extra exact public/custom DNS hostnames, no ports/wildcards; PUBLIC_URL/allowed-origin hosts are also trusted |
-| `LANFLUX_ROOM_TTL_SECONDS` | Absolute room life; default 3600, range 60–86400 |
-| `LANFLUX_PEER_IDLE_TIMEOUT_SECONDS` | Idle signaling cleanup; default 60, range 15–300 |
-| `LANFLUX_MAX_ROOMS`, `LANFLUX_MAX_PEERS` | In-process resource caps; defaults 1000 and 512 |
-| `LANFLUX_MAX_FILE_MIB`, `LANFLUX_MAX_MEMORY_MIB` | Lower browser payload limits; maximums 64 and 128 |
-| `LANFLUX_STUN_URLS` | Comma-separated `stun:` URLs; empty disables STUN for isolated LAN tests |
-| `LANFLUX_TURN_URLS` | Comma-separated `turn:`/`turns:` URLs; requires username/credential |
-| `LANFLUX_TURN_USERNAME`, `LANFLUX_TURN_CREDENTIAL` | Browser-visible relay credentials; no real values in source |
-| `LANFLUX_ICE_TRANSPORT_POLICY` | `all` or `relay`; forcing relay requires reachable TURN configuration |
+| Phone cannot open the invitation | Use `--lan`, allow the private-network firewall port and avoid guest Wi-Fi/client isolation. Check the actual LAN address or configure `LANFLUX_PUBLIC_URL`. |
+| QR points to the wrong network | Set the reachable base origin, restart, then create a **new** room. Existing invitations remain consistent. |
+| Invalid, expired or full room | Create a fresh invitation; rooms admit two peers and expire after one hour by default. |
+| Pages load, but peers cannot connect | Check ICE/DataChannel states, VPN/firewall restrictions and TURN configuration. A relay may be required across networks. |
+| AI keeps collecting | Keep both tabs connected/foregrounded, wait for measured RTT, and collect varied real observations. Constant or missing measurements do not train a pretend model. |
+| Large file refused | Stay below configured limits and clear completed receives after saving them. |
+| Transfer interrupted | Rejoin if necessary and select the file again. Cancelled or incomplete transfers are never marked verified. |
+| Metric unavailable | The browser has not supplied reliable data or the transfer was too short for that sample. |
 
-Example optional TURN configuration (substitute your own service; these are placeholders, not operational credentials):
+## Future improvements
 
-```dotenv
-LANFLUX_TURN_URLS=turn:turn.example.com:3478?transport=udp,turns:turn.example.com:5349?transport=tcp
-LANFLUX_TURN_USERNAME=short-lived-user
-LANFLUX_TURN_CREDENTIAL=short-lived-credential
-```
+Streaming-to-disk on supported browsers, safely resumable transfers, broader device/browser coverage, production TURN credential issuance, and longer independently labeled anomaly evaluations are future work.
 
-Public deployment requires **HTTPS/WSS**, a TLS reverse proxy forwarding WebSocket Upgrade and preserving the browser-visible Host, a private Uvicorn upstream, one worker, and exact public origin configuration. Avoid caching `/api/config`. Trust forwarded headers only from your own proxy; do not configure a blanket forwarded-IP trust on an exposed upstream. Keep proxy access logs from recording invitation queries or room socket paths.
+---
 
-TURN credentials are delivered to browsers. A public deployment needs restricted, expiring credentials and relay quotas; this version reads static credentials from the environment and does **not** issue or rotate them. Remote connectivity can fail without a correctly configured relay. Settings “Relay only” applies to the next room/connection. Verify the observed relay route before labeling an experiment as TURN.
-
-For local HTTPS, use certificates trusted by **both devices**; accepting an untrusted warning is not a portable setup. Optional CLI: `python -m lanflux --lan --ssl-certfile PATH --ssl-keyfile PATH`. Never publish the development server as a public service by default.
-
-## Tests and project structure
-
-```bash
-python -m pip install -r requirements-dev.txt
-python -m pytest -q
-npm ci
-npx playwright install chromium
-npm run test:unit
-npm run test:e2e
-```
-
-Node **20.19+** and Playwright are development-only. Python serves the vendored frontend directly; no npm dependency or CDN is required at runtime. `npm run vendor:hashes` reproducibly refreshes the pinned hash sources and manifest after `npm ci`.
-
-Current checks: **72 Python tests**, **36 JavaScript unit tests**, and **12 real Chromium browser scenarios plus their parent test** passed. See [exact verification and remaining untested conditions](docs/VERIFICATION.md). Browser tests start a localhost fixture on port 8765, use separate real browser contexts, and compare actual downloaded bytes. They also verify local insecure-HTTP hashing, corruption failure, interruptions, narrow layouts, diagnostics and exports. No physical-device, TURN or public-deployment result is claimed.
-
-- `lanflux/`: FastAPI entry point, validated configuration, room/signaling state, safe logging and CLI.
-- `lanflux/static/`: native HTML/CSS/JS, transfer engine, metrics, diagnostics, experiment exports and licensed hash implementation.
-- `tests/`: Python signaling/security and JavaScript/hash/metrics/export/browser regressions.
-- `scripts/`: bounded fixture generator and hash-vendoring tool.
-- `docs/`: inspection, verification, experiment methodology and real interface screenshots.
-
-## Attribution and licensing
-
-This workspace began with [alwaz-shahid's P2P-File-Sharing-on-Local-Network](https://github.com/alwaz-shahid/P2P-File-Sharing-on-Local-Network). Inspection found server-side HTTP upload/download behavior despite its P2P description. LANFLUX's Python signaling and browser transfer implementation were independently written under `lanflux/`; the original `app.py`, templates and Pipenv files remain preserved locally and are not executed.
-
-**The upstream did not advertise a license. Attribution does not grant redistribution rights.** Original source and the local `legacy/` archive remain ignored for new commits and are excluded from this LANFLUX publication. No new license is applied to those originals. Obtain permission before redistributing original source. See [repository inspection](docs/REPOSITORY_INSPECTION.md).
-
-The vendored @noble/hashes sources have their own [MIT copyright/license](lanflux/static/vendor/noble-hashes/LICENSE), which is retained with provenance. That license does not cover upstream project code or assign a license to the whole LANFLUX repository.
+[Configuration](docs/CONFIGURATION.md) · [AI monitor](docs/AI_MONITOR.md) · [Experiments](docs/NETWORK_EXPERIMENTS.md) · [Changelog](CHANGELOG.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)

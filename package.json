@@ -5,7 +5,7 @@
   "scripts": {
     "test:e2e": "node --test tests/browser.test.mjs",
     "test:protocol": "node --test tests/test_transfer.mjs",
-    "test:unit": "node --test tests/test_transfer.mjs tests/test_hash.mjs tests/test_metrics.mjs tests/test_experiments.mjs tests/test_diagnostics.mjs",
+    "test:unit": "node --test tests/test_transfer.mjs tests/test_hash.mjs tests/test_metrics.mjs tests/test_experiments.mjs tests/test_diagnostics.mjs tests/test_invitation.mjs tests/test_aiml.mjs",
     "vendor:hashes": "node scripts/vendor-hashes.mjs"
   },
   "devDependencies": {

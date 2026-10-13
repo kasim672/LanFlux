@@ -2,14 +2,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {readFile, mkdir} from 'node:fs/promises';
+import {readFile, writeFile, mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {chromium} from 'playwright';
 import {createHash} from 'node:crypto';
 
 const base = process.env.LANFLUX_TEST_URL || 'http://127.0.0.1:8765';
 const output = resolve('output/playwright');
-const docsShots = resolve('docs/screenshots');
+const docsShots = resolve(process.env.LANFLUX_SCREENSHOT_DIR || 'docs/screenshots');
+const captureOptions = (page,options = {}) => ({...options,
+  mask:[page.locator('#room-id'),page.locator('#invitation-url'),page.locator('#qr-image'),page.locator('#qr-room-code')],
+  maskColor:'#283a36',
+});
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const transfer = (page, name) => page.locator('[data-transfer-id]').filter({hasText:name});
 
@@ -24,7 +28,7 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:180000}, async t => 
   try {
     if (!process.env.LANFLUX_TEST_URL) {
       const python = process.env.LANFLUX_PYTHON || resolve(process.platform === 'win32' ? '.venv/Scripts/python.exe' : '.venv/bin/python');
-      server = spawn(python, ['-m','lanflux','--port','8765'], {
+      server = spawn(python, ['-m','lanflux','--lan','--port','8765'], {
         cwd:resolve('.'), env:{...process.env, LANFLUX_STUN_URLS:'',LANFLUX_TRUSTED_HOSTS:'lanflux.test'}, stdio:['ignore','pipe','pipe'],
       });
       server.stdout.on('data', data => {logs += data;});
@@ -51,6 +55,7 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:180000}, async t => 
     await a.screenshot({path:resolve(output,'desktop.png'),fullPage:true});
     await b.screenshot({path:resolve(output,'mobile.png'),fullPage:true});
     await a.screenshot({path:resolve(docsShots,'landing.png'),fullPage:true});
+    await a.screenshot({path:resolve(docsShots,'homepage.png'),fullPage:false});
 
     await t.test('create, invitation join, QR, and direct connection', async () => {
       await a.locator('#device-name').fill('Desktop');
@@ -62,12 +67,39 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:180000}, async t => 
       const qr = await fetch(`${base}/api/rooms/${room}/qr`);
       assert.equal(qr.status,200);
       assert.match(await qr.text(),/<svg/);
-      await b.goto(`${base}/?room=${room}`);
-      await b.waitForFunction(() => window.lanfluxClient?.config);
-      await b.locator('#device-name').fill('Phone browser');
-      await b.locator('#join-room').click();
+      const invitation = await a.locator('#invitation-url').inputValue();
+      assert.equal(new URL(invitation).searchParams.get('room'),room);
+      assert.equal(new URL(invitation).port,new URL((await a.evaluate(() => window.lanfluxClient.config)).invitation_base_url).port);
+      if (await a.evaluate(() => window.isSecureContext && Boolean(navigator.clipboard))) {
+        await contextA.grantPermissions(['clipboard-read','clipboard-write'],{origin:base});
+        await a.locator('#copy-link').click();
+        assert.equal(await a.evaluate(() => navigator.clipboard.readText()),invitation);
+      }
+      await b.evaluate(() => localStorage.setItem('lanflux.preferences',JSON.stringify({name:'Phone browser'})));
+      await b.goto(invitation);
       await Promise.all([a.waitForFunction(() => window.lanfluxClient.connected, null, {timeout:30000}), b.waitForFunction(() => window.lanfluxClient.connected, null, {timeout:30000})]);
       await a.waitForFunction(() => window.lanfluxClient._route === 'direct');
+      assert.equal(await b.locator('#invitation-url').inputValue(),invitation);
+      assert.equal(await b.evaluate(() => window.lanfluxClient.roomId),room);
+      await a.locator('.connection-panel').screenshot({path:resolve(docsShots,'connected-devices.png')});
+    });
+
+    await t.test('invalid, missing and full invitation rooms fail gracefully without retry loops', async () => {
+      const room = await a.evaluate(() => window.lanfluxClient.roomId);
+      for (const [query,message] of [['short',/invalid room code/i],['A'.repeat(16),/expired|does not exist/i],[room,/two devices/i]]) {
+        const visitor = await contextA.newPage();
+        visitor.on('pageerror',error=>errors.push(error.message));
+        await visitor.goto(`${base}/?room=${query}`);
+        await visitor.locator('#alert').waitFor({state:'visible'});
+        assert.match(await visitor.locator('#alert-text').innerText(),message);
+        await visitor.waitForFunction(() => window.lanfluxClient.socket === null && window.lanfluxClient._timers === null);
+        assert.equal(await visitor.locator('#setup-panel').isVisible(),true);
+        assert.equal(await visitor.locator('#create-room').isEnabled(),true);
+        assert.equal(await visitor.evaluate(() => window.lanfluxClient.connected),false);
+        await visitor.close();
+      }
+      assert.equal(await a.evaluate(() => window.lanfluxClient.connected),true);
+      assert.equal(await b.evaluate(() => window.lanfluxClient.connected),true);
     });
 
     await t.test('consent gates file bytes; sequential binary and empty files download exactly', async () => {
@@ -107,8 +139,9 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:180000}, async t => 
       await Promise.all([a.locator('#toast').waitFor({state:'hidden'}),b.locator('#toast').waitFor({state:'hidden'})]);
       await a.evaluate(() => {document.activeElement?.blur();window.scrollTo(0,0);});
       await b.evaluate(() => {document.activeElement?.blur();window.scrollTo(0,0);});
-      await a.screenshot({path:resolve(docsShots,'desktop.png'),fullPage:true});
-      await b.screenshot({path:resolve(docsShots,'mobile.png'),fullPage:true});
+      await a.screenshot(captureOptions(a,{path:resolve(docsShots,'desktop.png'),fullPage:true}));
+      await b.screenshot(captureOptions(b,{path:resolve(docsShots,'mobile.png'),fullPage:true}));
+      await transfer(b,'sample.bin').screenshot({path:resolve(docsShots,'verified-transfer.png')});
     });
 
     await t.test('reverse transfer sanitizes filename and preserves file bytes', async () => {
@@ -167,7 +200,32 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:180000}, async t => 
       await b.waitForFunction(() => [...window.lanfluxClient.transfers.values()].some(x => x.name === 'after-cancel.txt' && x.status === 'completed'));
     });
 
-    await t.test('real diagnostics, privacy controls, report exports, dialogs, and narrow layouts', async () => {
+    await t.test('AI monitor learns from real WebRTC observations, predicts and exports an evaluation CSV', async () => {
+      await a.waitForFunction(() => document.getElementById('ai-model-status').textContent.startsWith('Trained'), null, {timeout:60000});
+      await a.waitForFunction(() => ['Normal','Anomaly'].includes(document.getElementById('ai-prediction').textContent));
+      await a.waitForFunction(() => Number(document.getElementById('ai-sample-count').textContent.match(/· (\d+) retained/)?.[1]) >= 40, null, {timeout:30000});
+      assert.match(await a.locator('#ai-latency').innerText(),/ms/);
+      assert.match(await a.locator('#ai-throughput').innerText(),/Mbps/);
+      assert.ok(Number.isFinite(Number(await a.locator('#ai-score').innerText())));
+      const downloaded = a.waitForEvent('download');
+      await a.locator('#ai-export').click();
+      const csv = await readFile(await (await downloaded).path(),'utf8');
+      assert.match(csv,/rtt_ms,throughput_mbps,active_transfer/);
+      assert.match(csv,/evaluation,trained,(Normal|Anomaly)/);
+      assert.ok(csv.trim().split(/\r?\n/).length >= 41);
+      assert.ok(!csv.includes(await a.evaluate(() => window.lanfluxClient.roomId)));
+      assert.ok(!csv.includes('sample.bin') && !csv.includes('candidate:'));
+      await writeFile(resolve(output,'ai-observed.csv'),csv);
+      await a.locator('#ai-panel').screenshot({path:resolve(docsShots,'ai-monitor.png')});
+      await a.locator('#ai-reset').click();
+      await a.waitForFunction(() => document.getElementById('ai-model-status').textContent === 'Collecting training data'
+        && document.getElementById('ai-prediction').textContent === 'Unavailable');
+      assert.equal(await a.locator('#ai-prediction').innerText(),'Unavailable');
+      assert.match(await a.locator('#ai-model-status').innerText(),/Collecting training data/);
+      assert.equal(await a.evaluate(() => window.lanfluxClient.connected),true);
+    });
+
+    await t.test('real diagnostics, privacy controls, export helpers, dialogs, and narrow layouts', async () => {
       await a.waitForFunction(() => Number.isFinite(window.lanfluxClient._rttMs));
       await a.waitForFunction(() => document.getElementById('metric-total').textContent !== '0 B');
       assert.match(await a.locator('#metric-rtt').innerText(),/ms/);
@@ -181,16 +239,21 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:180000}, async t => 
       await a.locator('#hide-ice-details').click();
       assert.equal(await a.locator('#ice-details').innerText(),'');
       await a.locator('#network-diagnostics').screenshot({path:resolve(docsShots,'network.png')});
-      await a.locator('#experiment-environment').fill('Chromium automated loopback test');
       const csvDownload = a.waitForEvent('download');
-      await a.locator('#export-csv').click();
+      await a.evaluate(async () => {
+        const {experimentsToCsv,downloadText} = await import('/static/experiments.js');
+        downloadText(experimentsToCsv(window.lanfluxClient.transfers,{environmentLabel:'Chromium automated loopback test'}),'measurements.csv','text/csv');
+      });
       const csv = await readFile(await (await csvDownload).path(),'utf8');
       assert.match(csv,/sample\.bin/);
       assert.match(csv,/Verified/);
       assert.match(csv,/Chromium automated loopback test/);
       assert.ok(!csv.includes(await a.evaluate(() => window.lanfluxClient.roomId)));
       const reportDownload = a.waitForEvent('download');
-      await a.locator('#export-report').click();
+      await a.evaluate(async () => {
+        const {buildExperimentReport,downloadText} = await import('/static/experiments.js');
+        downloadText(buildExperimentReport(window.lanfluxClient.transfers),'measurements.txt');
+      });
       assert.match(await readFile(await (await reportDownload).path(),'utf8'),/SHA-256/);
       await a.locator('#settings-open').click();
       assert.equal(await a.locator('#settings-dialog').isVisible(),true);
@@ -324,18 +387,44 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:180000}, async t => 
       for (const page of [a,b]) {
         assert.equal(await page.evaluate(() => [...window.lanfluxClient.transfers.values()].find(x => x.name === 'interrupted.bin').status),'failed');
       }
-      const room = await a.evaluate(() => window.lanfluxClient.roomId);
       await b.reload();
-      await b.waitForFunction(() => window.lanfluxClient?.config);
-      await a.waitForFunction(() => window.lanfluxClient.initiator && !window.lanfluxClient.pc);
-      await b.locator('#room-code').fill(room);
-      await b.locator('#join-room').click();
       await Promise.all([a.waitForFunction(() => window.lanfluxClient.connected),b.waitForFunction(() => window.lanfluxClient.connected)]);
       await a.locator('#file-input').setInputFiles({name:'after-reload.txt',mimeType:'text/plain',buffer:Buffer.from('reload restart')});
       await b.waitForFunction(() => [...window.lanfluxClient.transfers.values()].some(x => x.name === 'after-reload.txt' && x.status === 'approval-needed'));
       await transfer(b,'after-reload.txt').locator('[data-action="approve"]').click();
       await b.waitForFunction(() => [...window.lanfluxClient.transfers.values()].some(x => x.name === 'after-reload.txt' && x.status === 'completed'));
       assert.deepEqual(errors,[]);
+    });
+
+    await t.test('cached-page restoration recreates working sharing and AI controls', async () => {
+      const restored = await contextA.newPage();
+      const partner = await contextB.newPage();
+      try {
+        await restored.goto(base);
+        await restored.waitForFunction(() => window.lanfluxClient?.config);
+        await restored.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide',{persisted:true})));
+        const navigation = restored.waitForEvent('framenavigated',frame => frame === restored.mainFrame());
+        await restored.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
+        await navigation;
+        await restored.waitForFunction(() => window.lanfluxClient?.config);
+        await restored.locator('#create-room').click();
+        await restored.waitForFunction(() => window.lanfluxClient.roomId && window.lanfluxClient.socket?.readyState === 1);
+        const room = await restored.evaluate(() => window.lanfluxClient.roomId);
+        rooms.push(room);
+        await partner.goto(await restored.locator('#invitation-url').inputValue());
+        await Promise.all([restored.waitForFunction(() => window.lanfluxClient.connected),partner.waitForFunction(() => window.lanfluxClient.connected)]);
+        await restored.locator('#file-input').setInputFiles({name:'restored.txt',mimeType:'text/plain',buffer:Buffer.from('restored UI works')});
+        await partner.waitForFunction(() => [...window.lanfluxClient.transfers.values()].some(item => item.status === 'approval-needed'));
+        await partner.locator('[data-action="approve"]').click();
+        await partner.waitForFunction(() => [...window.lanfluxClient.transfers.values()].some(item => item.status === 'completed' && item.hashStatus === 'verified'));
+        await restored.locator('#ai-export').waitFor({state:'visible'});
+        await restored.waitForFunction(() => !document.getElementById('ai-export').disabled);
+        const csvDownload = restored.waitForEvent('download');
+        await restored.locator('#ai-export').click();
+        assert.match(await readFile(await (await csvDownload).path(),'utf8'),/rtt_ms,throughput_mbps/);
+        await restored.locator('#ai-reset').click();
+        await restored.waitForFunction(() => document.getElementById('ai-message').textContent.includes('Baseline reset'));
+      } finally { await restored.close(); await partner.close(); }
     });
 
     if (!process.env.LANFLUX_TEST_URL) await t.test('LAN-style insecure HTTP supports room pairing and real downloads', async () => {

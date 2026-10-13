@@ -50,6 +50,10 @@ class Peer:
     peer_id: str = field(default_factory=lambda: secrets.token_hex(12))
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     closed: bool = False
+    telemetry_token: str = field(default_factory=lambda: secrets.token_urlsafe(32), repr=False)
+    aiml_monitor: object | None = field(default=None, repr=False)
+    aiml_pair: str | None = None
+    aiml_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
     async def send(self, message: dict) -> bool:
         if self.closed:
@@ -67,6 +71,8 @@ class Peer:
         if self.closed:
             return
         self.closed = True
+        self.aiml_monitor = None
+        self.aiml_pair = None
         try:
             async with self.send_lock:
                 await asyncio.wait_for(self.websocket.close(code=code, reason=reason), 2)
@@ -81,6 +87,7 @@ class Room:
     peers: list[Peer] = field(default_factory=list)
     pair_id: str | None = None
     negotiation_state: str = "waiting"
+    invitation_url: str = ""
 
 
 class RoomManager:
@@ -90,7 +97,7 @@ class RoomManager:
         self.lock = asyncio.Lock()
         self.peer_count = 0
 
-    async def create(self) -> Room:
+    async def create(self, invitation_base_url: str = "") -> Room:
         await self.expire()
         async with self.lock:
             if len(self.rooms) >= self.settings.max_rooms:
@@ -100,6 +107,8 @@ class RoomManager:
                 if room_id not in self.rooms:
                     break
             room = Room(room_id, time.time() + self.settings.room_ttl_seconds)
+            if invitation_base_url:
+                room.invitation_url = f"{invitation_base_url}/?room={room_id}"
             self.rooms[room_id] = room
             return room
 
@@ -126,10 +135,15 @@ class RoomManager:
             if not room or peer not in room.peers:
                 return
             room.peers.remove(peer)
+            peer.aiml_monitor = None
+            peer.aiml_pair = None
             self.peer_count -= 1
             room.pair_id = None
             room.negotiation_state = "waiting"
             other = room.peers[0] if room.peers else None
+            if other:
+                other.aiml_monitor = None
+                other.aiml_pair = None
             if not other:
                 room.expires_at = min(room.expires_at, time.time() + self.settings.empty_room_grace_seconds)
         if other:
