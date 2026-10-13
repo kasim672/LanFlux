@@ -1,0 +1,15 @@
+{
+  "name": "lanflux-browser-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:e2e": "node --test tests/browser.test.mjs",
+    "test:protocol": "node --test tests/test_transfer.mjs",
+    "test:unit": "node --test tests/test_transfer.mjs tests/test_hash.mjs tests/test_metrics.mjs tests/test_experiments.mjs tests/test_diagnostics.mjs",
+    "vendor:hashes": "node scripts/vendor-hashes.mjs"
+  },
+  "devDependencies": {
+    "@noble/hashes": "2.4.0",
+    "playwright": "^1.64.0"
+  }
+}
