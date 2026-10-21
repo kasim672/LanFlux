@@ -1,0 +1,2 @@
+# PDF reports are binary artifacts, not text diffs or merge inputs.
+*.pdf binary

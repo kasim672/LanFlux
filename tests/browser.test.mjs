@@ -17,7 +17,7 @@ const captureOptions = (page,options = {}) => ({...options,
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const transfer = (page, name) => page.locator('[data-transfer-id]').filter({hasText:name});
 
-test('LANFLUX real browser sharing and lifecycle', {timeout:180000}, async t => {
+test('LANFLUX real browser sharing and lifecycle', {timeout:240000}, async t => {
   await mkdir(output, {recursive:true});
   await mkdir(docsShots, {recursive:true});
   let server, browser;
@@ -206,6 +206,8 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:180000}, async t => 
       await a.waitForFunction(() => Number(document.getElementById('ai-sample-count').textContent.match(/· (\d+) retained/)?.[1]) >= 40, null, {timeout:30000});
       assert.match(await a.locator('#ai-latency').innerText(),/ms/);
       assert.match(await a.locator('#ai-throughput').innerText(),/Mbps/);
+      assert.match(await a.locator('#ai-forecast-status').innerText(),/Learning from network activity/);
+      assert.equal(await a.locator('#ai-forecast').innerText(),'Unavailable');
       assert.ok(Number.isFinite(Number(await a.locator('#ai-score').innerText())));
       const downloaded = a.waitForEvent('download');
       await a.locator('#ai-export').click();
@@ -223,6 +225,49 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:180000}, async t => 
       assert.equal(await a.locator('#ai-prediction').innerText(),'Unavailable');
       assert.match(await a.locator('#ai-model-status').innerText(),/Collecting training data/);
       assert.equal(await a.evaluate(() => window.lanfluxClient.connected),true);
+    });
+
+    await t.test('RandomForest learns from actual paced WebRTC bytes without injected telemetry', {timeout:130000}, async () => {
+      // Controlled test workload, NOT a Wi-Fi benchmark or production Smart Mode.
+      // Keep the real backpressure check and delay only this fixture's sender.
+      await a.evaluate(() => {
+        const client = window.lanfluxClient;
+        client._forecastTestWait = client._waitForBuffer;
+        client._waitForBuffer = async function(...args) {
+          await client._forecastTestWait.apply(this,args);
+          const delays = [100,150,220,280];
+          await new Promise(resolve => setTimeout(resolve,delays[Math.floor(performance.now()/6000)%4]));
+        };
+        client.addFiles([new File([new Uint8Array(8*1024*1024).fill(51)],'forecast-observed.bin')]);
+      });
+      try {
+        await b.waitForFunction(() => [...window.lanfluxClient.transfers.values()].some(item => item.name === 'forecast-observed.bin' && item.status === 'approval-needed'));
+        await transfer(b,'forecast-observed.bin').locator('[data-action="approve"]').click();
+        await a.waitForFunction(() => document.getElementById('ai-forecast-status').textContent.startsWith('Trained'),null,{timeout:100000});
+        await a.waitForFunction(() => document.getElementById('ai-forecast').textContent !== 'Unavailable',null,{timeout:10000});
+        assert.ok(Number.isFinite(Number(await a.locator('#ai-forecast').innerText())));
+        assert.ok(Number.isFinite(Number(await a.locator('#ai-forecast-mae').innerText())));
+        assert.ok(Number.isFinite(Number(await a.locator('#ai-baseline-mae').innerText())));
+        assert.match(await a.locator('#ai-trend').innerText(),/^(improving|stable|degrading)$/);
+        const exported = a.waitForEvent('download');
+        await a.locator('#ai-export').click();
+        const csv = await readFile(await (await exported).path(),'utf8');
+        assert.match(csv,/forecast_status,forecast_mbps,forecast_mae_mbps,baseline_mae_mbps/);
+        assert.ok(!csv.includes('forecast-observed.bin'));
+        await writeFile(resolve(output,'forecast-observed.csv'),csv);
+        await a.locator('#ai-panel').screenshot({path:resolve(output,'forecast-observed.png')});
+        await b.waitForFunction(() => [...window.lanfluxClient.transfers.values()].some(item => item.name === 'forecast-observed.bin' && item.status === 'completed' && item.hashStatus === 'verified'),null,{timeout:50000});
+        const downloaded = b.waitForEvent('download');
+        await transfer(b,'forecast-observed.bin').locator('[data-action="download"]').click();
+        assert.deepEqual(await readFile(await (await downloaded).path()),Buffer.alloc(8*1024*1024,51));
+        await a.waitForFunction(() => document.getElementById('ai-forecast').textContent === 'Unavailable');
+      } finally {
+        await a.evaluate(() => {
+          const client = window.lanfluxClient;
+          client._waitForBuffer = client._forecastTestWait;
+          delete client._forecastTestWait;
+        });
+      }
     });
 
     await t.test('real diagnostics, privacy controls, export helpers, dialogs, and narrow layouts', async () => {

@@ -135,6 +135,9 @@ def test_api_access_control_origin_membership_and_cleanup():
                 assert response.status_code == 200
                 assert response.json()['prediction'] is None
                 assert response.json()['training_samples'] == 1
+                assert response.json()['forecast']['status'] == 'learning'
+                assert response.json()['forecast']['predicted_mbps'] is None
+                assert response.json()['advice']['trend'] is None
                 assert client.post('/api/aiml/sample', json=payload, headers=auth(one)).status_code == 429
                 identity = {k: v for k, v in payload.items() if k != 'sample'}
                 export = client.post('/api/aiml/export', json=identity, headers=auth(one))

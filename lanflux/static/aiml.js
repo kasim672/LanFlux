@@ -35,6 +35,8 @@ export class AINetworkMonitor {
     this.connected = false;
     this.controller = null;
     this.samples = 0;
+    this.forecastAt = null;
+    this.activeTransfer = false;
     this.downloads = new Map();
     this.resetHandler = () => this.resetBaseline();
     this.exportHandler = () => this.exportCsv();
@@ -63,6 +65,10 @@ export class AINetworkMonitor {
     this.samples = 0;
     this.write('ai-model-status','Collecting training data');
     this.write('ai-sample-count','0 / 30 baseline samples');
+    this.clearForecast();
+    this.write('ai-forecast-status','Learning from network activity');
+    this.write('ai-forecast-mae','Unavailable'); this.write('ai-baseline-mae','Unavailable');
+    this.activeTransfer = false;
     this.write('ai-prediction','Unavailable');
     this.write('ai-score','Unavailable');
     this.write('ai-throughput','Unavailable');
@@ -87,10 +93,13 @@ export class AINetworkMonitor {
     this.connected = true;
     this.write('ai-latency',formatMilliseconds(measurement.rttMs));
     const active = Array.from(client.transfers.values()).some(transfer => transfer.status === 'transferring');
+    this.activeTransfer = active;
+    if (!active || (this.forecastAt !== null && now - this.forecastAt > 3000)) this.clearForecast?.();
     const sample = this.sampler.sample(measurement,connected,active,now);
     this.controls();
     if (!sample) {
       if (!Number.isFinite(measurement.rttMs)) {
+        this.clearForecast?.();
         this.write('ai-prediction','Unavailable');
         this.write('ai-score','Unavailable');
         this.write('ai-message','Waiting for measured DataChannel round-trip latency. Missing values are never replaced with zero.');
@@ -99,7 +108,8 @@ export class AINetworkMonitor {
     }
     this.write('ai-throughput',formatBits(sample.throughput_mbps * 1e6 / 8));
     if (!this.identity || this.pending) return;
-    this.request('sample',{sample}).then(result => { if (result) this.render(result); }).catch(error => {
+    this.request('sample',{sample}).then(result => { if (result) this.render(result,now); }).catch(error => {
+      this.clearForecast?.();
       if (error.name !== 'AbortError') {
         this.write('ai-prediction','Unavailable'); this.write('ai-score','Unavailable');
         this.write('ai-message',`Monitor unavailable: ${error.message}. File sharing continues independently.`);
@@ -136,13 +146,36 @@ export class AINetworkMonitor {
     }
   }
 
-  render(result) {
+  clearForecast() {
+    this.forecastAt = null;
+    this.write('ai-forecast','Unavailable'); this.write('ai-trend','Unavailable');
+    this.write('ai-advice','Keep collecting active-transfer observations before relying on predictive advice.');
+  }
+
+  renderForecast(forecast = {}, advice = {}, measuredAt = performance.now()) {
+    this.clearForecast();
+    const trained = forecast.status === 'trained';
+    this.write('ai-forecast-status',trained ? `Trained · RandomForest · ${forecast.labeled_samples} labeled windows · last holdout ${forecast.validation?.validation_samples ?? 'Unavailable'} windows` :
+      forecast.status === 'unavailable' ? 'Forecast unavailable' : `Learning from network activity · ${forecast.labeled_samples || 0} / ${forecast.min_labeled_samples || 60} labeled windows`);
+    const evaluation = forecast.validation;
+    this.write('ai-forecast-mae',Number.isFinite(evaluation?.mae_mbps) ? evaluation.mae_mbps.toFixed(3) : 'Unavailable');
+    this.write('ai-baseline-mae',Number.isFinite(evaluation?.baseline_mae_mbps) ? evaluation.baseline_mae_mbps.toFixed(3) : 'Unavailable');
+    if (trained && this.activeTransfer && performance.now() - measuredAt <= 3000 && Number.isFinite(forecast.predicted_mbps) && forecast.predicted_mbps >= 0) {
+      this.write('ai-forecast',forecast.predicted_mbps.toFixed(2));
+      this.write('ai-trend',['improving','stable','degrading'].includes(advice.trend) ? advice.trend : 'Unavailable');
+      this.forecastAt = measuredAt;
+    }
+    if (advice.recommendation && (this.forecastAt !== null || advice.recommendation.startsWith('Unusual'))) this.write('ai-advice',advice.recommendation);
+  }
+
+  render(result, measuredAt = performance.now()) {
     this.samples = result.samples_retained;
     this.write('ai-model-status',result.status === 'trained' ? 'Trained · IsolationForest' : 'Collecting training data');
     this.write('ai-sample-count',`${result.training_samples} / ${result.min_samples} baseline samples · ${result.samples_retained} retained`);
     this.write('ai-prediction',result.prediction || 'Unavailable');
     this.write('ai-score',Number.isFinite(result.anomaly_score) ? result.anomaly_score.toFixed(5) : 'Unavailable');
     this.write('ai-message',result.message);
+    this.renderForecast(result.forecast, result.advice, measuredAt);
     document.getElementById('ai-panel').dataset.prediction = result.prediction || '';
     this.controls();
   }

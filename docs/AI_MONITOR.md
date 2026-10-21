@@ -1,12 +1,12 @@
 # AI Network Monitor
 
-LANFLUX's experimental unsupervised detector reuses existing WebRTC diagnostics. It does not inspect files, modify transfer messages, throttle transfers or claim to detect attacks reliably.
+LANFLUX combines experimental IsolationForest anomaly detection with a supervised RandomForest throughput forecast, reusing existing WebRTC diagnostics. It does not inspect files, modify transfer messages, throttle transfers or claim to detect attacks reliably.
 
 ## Observations
 
 Connected browsers sample approximately once per second:
 
-| Field | Source | Used by model |
+| Field | Source | Used by IsolationForest |
 | --- | --- | --- |
 | RTT, milliseconds | Explicit DataChannel ping/pong elapsed time | Yes, `log1p` |
 | Payload throughput, decimal Mbps | Actual sent-plus-received file-byte counter delta / elapsed sample time | Yes, `log1p` |
@@ -15,7 +15,7 @@ Connected browsers sample approximately once per second:
 
 RTT probes run approximately every five seconds, so adjacent one-second rows may share the latest observation. Browser scheduling and channel queueing affect RTT; this is not ICMP latency. Sender counts indicate bytes handed to the channel, receiver counts indicate accepted payload. A measured idle interval can legitimately have zero throughput. Missing RTT, disconnected sessions, counter resets and sampling gaps over ten seconds are skipped, never replaced with fabricated values.
 
-## Training and prediction
+## IsolationForest training and prediction
 
 Each peer has its own session-local monitor. Training requires at least **30 actual observations**, at least **25 seconds measured by the server's monotonic clock**, and **three distinct rounded feature combinations**. The UI stays **Collecting training data** when any requirement is missing; constant telemetry explains that more variation is needed.
 
@@ -58,3 +58,49 @@ The human-readable report states baseline/holdout counts, mean observed RTT/thro
 Pair the computer and phone, keep both foregrounded, open Network diagnostics, and send representative files during collection. Wait at least 30–45 seconds; insufficient variation or missing RTT can take longer. After training, observe the score and prediction during later transfers or a real change in distance/congestion. Export all outcomes, including normal ones. An anomaly is not guaranteed and should not be manufactured for a presentation.
 
 Thirty rows are an MVP threshold, not proof of statistical adequacy or 30 independent latency probes. Workload changes, file hashing, CPU scheduling, idle time and Wi-Fi variation can produce false positives; the model can miss anomalies. No labeled accuracy, Wi-Fi benchmark or physical-device performance claim is supplied. Stronger evaluation needs longer representative sessions and independent ground-truth annotation.
+
+
+## Three-second throughput forecast and transfer advice
+
+`aiml/predictor.py` adds a supervised **RandomForestRegressor** alongside IsolationForest. It predicts aggregate sent-plus-received payload Mbps over approximately the next three seconds **if transfer activity continues**, not link capacity or a specific file's completion speed. Five past observations provide last/mean/standard-deviation throughput, throughput slope, last RTT/RTT variation, active fraction and reliable direct/relay indicators. Unknown routes are not guessed.
+
+An input window is anchored before its label exists. The following measured intervals supply the duration-weighted three-second target; the final interval is proportionally clipped at the horizon. This is an interval-rate approximation, not sub-second ground truth. Only fully active input and future windows contribute labels; stalled active intervals may have real zero throughput. Idle periods cannot manufacture a good evaluation. Samples outside 750–2000 ms, inconsistent receipt gaps, missing observations and disconnections break pending windows.
+
+Training requires **60 genuinely labeled windows**, at least 30 training and 12 validation examples after purging, six distinct recent-speed values, and meaningful throughput variation. The first 70% of windows are training candidates; later windows validate. Training examples whose labels overlap the first validation input window are removed. Validation MAE in Mbps is displayed beside the MAE of always predicting the last observed speed. These are measured holdout errors, not accuracy percentages or proof of improvement. Overlapping windows remain correlated, so this small validation is not an independent network benchmark.
+
+The target and validation calculations are explicit:
+
+```text
+future Mbps = sum(observed interval Mbps * included interval seconds) / 3
+model MAE = mean(abs(actual future Mbps - RandomForest prediction Mbps))
+baseline MAE = mean(abs(actual future Mbps - last observed Mbps))
+```
+
+For example, an anchor's five input rates are already fixed before any later observation arrives. Only the next intervals can create its target; changing those later rates cannot change the stored input features. The purge criterion is `training.label_end < first_validation.input_start`. The fitted model uses the training fold only, so validation rows are not subsequently folded back into the reported live model. This protects the stated holdout comparison; it does not make correlated rolling windows independent.
+
+The forest uses 48 trees, depth at most six, minimum leaf size three and one worker. At most 240 labeled examples, five history points and eight pending anchors are retained per existing session monitor. Refitting needs 30 new labels and at least 60 seconds since the last fit. Fitting/prediction uses the existing off-event-loop, authenticated telemetry request path; no new service, dependency, model download or file metadata is needed. Reset/session cleanup clears both models. CSV exports append actual forecasts, validation MAEs and trend; the existing `aiml.evaluate` CLI still evaluates IsolationForest only.
+
+**AI Transfer Intelligence** shows measured speed alongside a fresh forecast, learning/trained status, trend and advisory text. Recommendations are explicitly **rules**, combining IsolationForest status, forecast direction and the measured validation comparison. Trend uses a change threshold of the larger of 0.25 Mbps or 15% of measured speed. Advice flags experimental forecasts that have not beaten the last-speed baseline. An anomaly is not proof of an attack. Forecasts disappear during idle activity, missing latency, request failure or after three seconds without a fresh result; normal file sharing remains independent.
+
+### Demonstrate
+
+1. Start `python -m lanflux --lan --port 8000`, pair the devices and open Network diagnostics.
+2. Keep tabs foregrounded and send representative files while approving incoming offers. Collect at least roughly 70–90 seconds of **active**, varied measurements; idle time does not count. Several short transfers may not supply complete five-second inputs plus three-second labels. Use files within the existing 64 MiB limit and clear saved receives before hitting 128 MiB retention.
+3. Wait for the separate RandomForest status to become trained. During continued transfers, observe measured/predicted Mbps, trend, model MAE and baseline MAE. Predictions may be worse than the baseline; report that result honestly.
+4. Export the real CSV before resetting/disconnecting. No synthetic test fixtures are used in live training. Fast or short sessions may legitimately remain “Learning from network activity”.
+
+Experimental Smart Transfer Mode is deliberately not implemented: no pacing, chunk sizes, negotiated limits, backpressure or wire protocol are changed. A controlled performance comparison is needed before letting uncertain forecasts influence transmission.
+
+## Implementation and test map
+
+| File | Responsibility |
+| --- | --- |
+| `aiml/model.py` | Strict observations, anomaly baseline, session records and forecaster/advisor composition |
+| `aiml/predictor.py` | Past-only features, delayed labels, bounded forest fitting, chronological validation and advisory rules |
+| `aiml/api.py` | Existing peer authorization, request caps, per-peer serialization and off-event-loop operations |
+| `lanflux/static/aiml.js` | Actual browser sampling, authenticated requests, fresh/unavailable presentation and CSV/reset controls |
+| `tests/test_predictor.py` | Synthetic correctness fixtures for leakage, alignment, timing gaps, eligibility, fitting, evaluation, advisor and failure fallback |
+| `tests/test_aiml.py`, `tests/test_aiml.mjs` | API authorization, strict metadata, sampler calculations and forecast freshness |
+| `tests/browser.test.mjs` | Actual browser observations, approved verified transfers, model training and displayed predictions |
+
+Run `python -m pytest -q tests/test_predictor.py tests/test_aiml.py`, `npm run test:unit` and `npm run test:e2e`. Full executed results and limits are recorded in [verification](VERIFICATION.md). Synthetic unit-test fixtures never seed a live session.

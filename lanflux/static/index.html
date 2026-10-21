@@ -117,6 +117,13 @@
           <p id="ai-sample-count" class="small muted">0 / 30 baseline samples</p>
           <dl class="session-metrics ai-metrics"><div><dt>Measured throughput</dt><dd id="ai-throughput">Unavailable</dd></div><div><dt>Measured latency</dt><dd id="ai-latency">Unavailable</dd></div><div><dt>ML prediction</dt><dd id="ai-prediction">Unavailable</dd></div><div><dt>Anomaly score</dt><dd id="ai-score">Unavailable</dd></div></dl>
           <p id="ai-message" class="field-description" role="status">Connect two browsers to collect actual network measurements.</p>
+          <section class="ai-intelligence" aria-labelledby="ai-intelligence-title">
+            <h3 id="ai-intelligence-title">AI Transfer Intelligence</h3>
+            <p id="ai-forecast-status" class="small muted" role="status">Learning from network activity</p>
+            <dl class="session-metrics ai-metrics"><div><dt>Predicted next 3 s · Mbps</dt><dd id="ai-forecast">Unavailable</dd></div><div><dt>Network trend</dt><dd id="ai-trend">Unavailable</dd></div><div><dt>Validation MAE · Mbps</dt><dd id="ai-forecast-mae">Unavailable</dd></div><div><dt>Last-speed baseline MAE · Mbps</dt><dd id="ai-baseline-mae">Unavailable</dd></div></dl>
+            <p id="ai-advice" class="field-description" aria-live="polite">Keep collecting active-transfer observations before relying on predictive advice.</p>
+            <p class="measurement-note">RandomForest predicts approximate payload throughput if transfer activity continues. Recommendations use advisory rules, not another trained model. Forecasts do not guarantee speed or detect attacks.</p>
+          </section>
           <div class="ai-actions"><button id="ai-export" class="button secondary" type="button" disabled>Export real samples CSV ↓</button><button id="ai-reset" class="button quiet" type="button" disabled>Reset learning baseline</button></div>
           <p class="measurement-note">IsolationForest learns from at least 30 real observations, then evaluates new samples. Positive scores indicate anomalies; scores are not probabilities. Experimental results can reflect workload changes and do not prove an attack.</p>
           <p class="measurement-note ai-data-note">Only network metadata reaches Python, never files. Export before resetting: reset clears the baseline and sample history.</p>

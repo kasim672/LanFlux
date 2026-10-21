@@ -41,3 +41,26 @@ test('AI sampler skips unavailable latency, disconnected peers, reload counters 
   assert.equal(sampler.sample(measurement(200,NaN),true,false,16000),null);
   assert.equal(sampler.sample({...measurement(300),dataChannelState:'closed'},true,false,17000),null);
 });
+
+test('Forecast presentation uses server values and clears idle, stale or invalid predictions', () => {
+  const fields = new Map();
+  const view = {activeTransfer:true,forecastAt:null,write:(id,text)=>fields.set(id,text)};
+  view.clearForecast = () => AINetworkMonitor.prototype.clearForecast.call(view);
+  const render = (forecast,advice={},time=performance.now()) => AINetworkMonitor.prototype.renderForecast.call(view,forecast,advice,time);
+  const forecast = {status:'trained',predicted_mbps:12.5,labeled_samples:70,
+    validation:{mae_mbps:1.234,baseline_mae_mbps:2.345}};
+  render(forecast,{trend:'stable',recommendation:'Actual server recommendation'});
+  assert.equal(fields.get('ai-forecast'),'12.50');
+  assert.equal(fields.get('ai-forecast-mae'),'1.234');
+  assert.equal(fields.get('ai-trend'),'stable');
+  assert.equal(fields.get('ai-advice'),'Actual server recommendation');
+  render(forecast,{},performance.now()-4000);
+  assert.equal(fields.get('ai-forecast'),'Unavailable');
+  view.activeTransfer=false;render(forecast);
+  assert.equal(fields.get('ai-forecast'),'Unavailable');
+  view.activeTransfer=true;render({...forecast,predicted_mbps:NaN});
+  assert.equal(fields.get('ai-forecast'),'Unavailable');
+  render({status:'learning',labeled_samples:3,min_labeled_samples:60});
+  assert.match(fields.get('ai-forecast-status'),/Learning from network activity/);
+  assert.equal(fields.get('ai-forecast-mae'),'Unavailable');
+});

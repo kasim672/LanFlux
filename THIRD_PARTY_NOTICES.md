@@ -10,7 +10,7 @@ The required MIT copyright and permission notice is preserved in [the distribute
 
 ## Installed dependencies
 
-Python runtime dependencies and npm development tools are installed through their respective package managers; their license files and notices remain with those packages. LANFLUX does not bundle a frontend framework, CDN script or third-party font.
+Python runtime dependencies and npm development tools are installed through their respective package managers; their license files and notices remain with those packages. The browser application does not bundle a frontend framework, CDN script or third-party font. The optional PDF report embeds Bitstream Vera font subsets supplied by ReportLab; its [font copyright and permission notice](docs/FONT_NOTICES.md) is included in the repository and report.
 
 ## Project acknowledgment
 

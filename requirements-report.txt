@@ -1,0 +1,2 @@
+# Optional documentation build only; not needed to run LANFLUX.
+reportlab>=4.2,<5

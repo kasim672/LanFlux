@@ -11,6 +11,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from sklearn.ensemble import IsolationForest
 
+from .predictor import ThroughputPredictor, advise
+
 MIN_SAMPLES = 30
 MIN_TRAINING_SECONDS = 25
 MAX_RECORDS = 600
@@ -54,6 +56,7 @@ class NetworkMonitor:
     not independently attested measurements. Nothing is written to disk.
     """
     def __init__(self):
+        self.forecaster = ThroughputPredictor()
         self.records = deque(maxlen=MAX_RECORDS)
         self.training: list[Observation] = []
         self.model = None
@@ -67,6 +70,7 @@ class NetworkMonitor:
             'training_samples': len(self.training), 'min_samples': MIN_SAMPLES,
             'samples_retained': len(self.records), 'max_records': MAX_RECORDS,
             'prediction': label, 'anomaly_score': score,
+            'forecast': self.forecaster.status(),
             'message': message or ('Baseline trained; evaluating new measurements.' if self.model is not None
                                    else 'Collecting training data from this connected session.'),
         }
@@ -96,17 +100,31 @@ class NetworkMonitor:
         else:
             label, score = prediction(self.model, observation)
         result = self.status(label, score, message)
+        try:
+            forecast = self.forecaster.add(observation, now)
+        except Exception:
+            # Forecast failures must not suppress the existing anomaly monitor or sharing.
+            forecast = {'status': 'unavailable', 'predicted_mbps': None, 'validation': None,
+                        'message': 'Forecast unavailable; file sharing continues independently.'}
+        result['forecast'] = forecast
+        result['advice'] = advise(forecast, label, observation.throughput_mbps)
         self.records.append({
             'observed_at': datetime.now(timezone.utc).isoformat(), **observation.model_dump(),
             'phase': phase, 'model_status': result['status'], 'prediction': label or '',
             'anomaly_score': score if score is not None else '',
+            'forecast_status': forecast['status'],
+            'forecast_mbps': forecast.get('predicted_mbps') if forecast.get('predicted_mbps') is not None else '',
+            'forecast_mae_mbps': (forecast.get('validation') or {}).get('mae_mbps', ''),
+            'baseline_mae_mbps': (forecast.get('validation') or {}).get('baseline_mae_mbps', ''),
+            'network_trend': result['advice']['trend'] or '',
         })
         result['samples_retained'] = len(self.records)
         return result
 
     def export_csv(self) -> str:
         columns = ['observed_at', *FEATURES, 'interval_ms', 'total_bytes', 'route',
-                   'phase', 'model_status', 'prediction', 'anomaly_score']
+                   'phase', 'model_status', 'prediction', 'anomaly_score',
+                   'forecast_status', 'forecast_mbps', 'forecast_mae_mbps', 'baseline_mae_mbps', 'network_trend']
         output = io.StringIO(newline='')
         writer = csv.DictWriter(output, fieldnames=columns)
         writer.writeheader()

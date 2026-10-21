@@ -12,9 +12,9 @@
 [![Version](https://img.shields.io/badge/version-0.3.0-80dfc2)](CHANGELOG.md)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](requirements.txt)
 [![WebRTC](https://img.shields.io/badge/transport-WebRTC-6978ef)](#architecture)
-[![IsolationForest](https://img.shields.io/badge/ML-IsolationForest-f0bd76)](aiml/model.py)
+[![Machine learning](https://img.shields.io/badge/ML-IsolationForest%20%2B%20RandomForest-f0bd76)](docs/AI_MONITOR.md)
 
-[Quick start](#quick-start) · [Phone pairing](#pair-your-phone) · [AI monitor](#ai-network-monitor) · [Tests](#testing-and-evaluation)
+[Quick start](#quick-start) · [Phone pairing](#pair-your-phone) · [Documentation](docs/README.md) · [PDF technical report](docs/LANFLUX_Technical_Report.pdf)
 
 </div>
 
@@ -24,7 +24,7 @@
 
 LANFLUX connects two browsers through an encrypted WebRTC DataChannel. Create a temporary room, scan its QR invitation, approve a file, and download the verified result. Either device can send; no desktop app, account or frontend build is required.
 
-Python handles room management, signaling and experimental network analysis. **File contents, filenames and SHA-256 digests stay between browsers.** The AI monitor learns from real session measurements and flags observations that differ from its baseline; it does not inspect files or control transfers.
+Python handles room management, signaling and experimental network analysis. **File contents, filenames and SHA-256 digests stay between browsers.** The AI monitor learns from real session measurements, flags unusual observations and predicts approximate near-future throughput. It does not inspect files or control transfers.
 
 ## Features
 
@@ -35,7 +35,7 @@ Python handles room management, signaling and experimental network analysis. **F
 | Desktop drag-and-drop and mobile file selection | Clear verified, rejected, cancelled and failed states |
 | Chunked transfers with DataChannel backpressure | Measured throughput, RTT and connection state |
 | Downloads and bounded in-memory retention | Direct/TURN labels based on observed ICE statistics |
-| Responsive dark interface and keyboard-accessible controls | Session-local IsolationForest predictions and real-data CSV export |
+| Responsive dark interface and keyboard-accessible controls | IsolationForest anomaly detection, RandomForest forecasts and real-data CSV export |
 
 ### Desktop and mobile
 
@@ -57,7 +57,7 @@ flowchart LR
     A <-->|Approved file chunks · encrypted DataChannel| B
     A -.->|Network metadata only| S
     B -.->|Network metadata only| S
-    S --> ML[Session-local IsolationForest]
+    S --> ML[Session-local IsolationForest + RandomForest]
     ML -->|Status and predictions| S
     A -.->|Connectivity discovery| STUN[STUN]
     B -.->|Connectivity discovery| STUN
@@ -84,27 +84,32 @@ Both peers can cancel. Leaving, reloading or a broken connection stops unfinishe
 
 ## AI Network Monitor
 
-![IsolationForest trained on actual browser network observations](docs/screenshots/ai-monitor.png)
+![Actual AI monitor with both trained models and observed network measurements](docs/screenshots/ai-intelligence.png)
 
-Open **Network diagnostics → AI Network Monitor** after pairing. Collection starts automatically, approximately once per second, using observed payload throughput in **Mbps**, DataChannel ping/pong **RTT in ms**, and an active-transfer indicator. Missing RTT and suspended sampling intervals are skipped.
+Open **Network diagnostics → AI Network Monitor** after pairing. LANFLUX collects actual payload throughput in decimal **Mbps**, DataChannel ping/pong **RTT in ms**, active-transfer state and observed route approximately once per second. Files, names, hashes and private ICE addresses never enter the ML API.
 
-The panel shows **Collecting training data** until it has at least **30 observations**, **25 seconds of session time**, and **three distinct feature combinations**. A 64-tree scikit-learn IsolationForest then freezes its baseline and predicts on later observations. A positive anomaly score means **Anomaly**; zero or negative means **Normal**. The score is not a probability.
+| Component | Learning requirement | What it shows |
+| --- | --- | --- |
+| IsolationForest | 30 real observations, 25 server-measured seconds and feature variation | Normal/Anomaly and a signed anomaly score on later observations |
+| RandomForestRegressor | 60 genuinely labeled active-transfer windows, sufficient variation and disjoint chronological train/validation data | Approximate throughput over the next three seconds, model MAE and last-speed baseline MAE |
+| Transfer advisor | Fresh forecast and observed anomaly state | Improving/stable/degrading trend and clearly identified advisory rules |
+
+The forecast uses five past observations. Its target comes only from subsequent measured intervals. Idle periods, missing measurements and irregular sampling do not create training successes. **Learning from network activity** is expected until enough eligible data exists. Predictions are experimental, may be worse than the simple baseline and never alter the transfer engine.
 
 ### Demonstrate it
 
-1. Pair two foreground browser tabs and transfer several representative files while learning.
-2. Wait for **Trained · IsolationForest**. Watch actual throughput, RTT, predictions and scores as more observations arrive.
-3. Compare steady operation with an observed network or workload change. An anomaly is not guaranteed; retain normal results too.
-4. Collect at least **40 rows**, then choose **Export real samples CSV** while connected.
-5. Evaluate the exported data using a chronological baseline and holdout:
+1. Pair two foreground browsers and send representative files with receiver approval.
+2. IsolationForest usually needs at least 30–45 seconds. Forecast learning needs roughly 70–90 seconds of sustained, varied **active** transfer observations; short files and idle time may take much longer.
+3. During continued activity, compare measured and predicted Mbps, trend, model MAE and baseline MAE. Do not describe MAE as an accuracy percentage.
+4. Choose **Export real samples CSV** before disconnecting or resetting. Evaluate the anomaly detector's chronological holdout with:
 
 ```bash
 python -m aiml.evaluate /path/to/lanflux-network.csv --output network-predictions.csv
 ```
 
-The CLI prints a report and writes holdout predictions to a new CSV. It never generates a training dataset. **Reset learning baseline** deletes the current peer's records and model; disconnecting also clears them. Each monitor retains at most 600 rows in memory.
+The CLI evaluates IsolationForest only; RandomForest validation is calculated live and included in CSV columns. Neither path fabricates data. Reset, peer replacement and disconnect clear session-local models. A positive anomaly score denotes unusual observations, not proof of an attack. No performance improvement or labeled anomaly accuracy is claimed.
 
-This is an experimental unsupervised detector. Browser scheduling, file hashing, idle periods and harmless workload changes can affect results. There are no ground-truth anomaly labels, so accuracy, precision and recall are unavailable. A prediction is neither proof of an attack nor an independent measurement of link capacity. See [algorithm, access controls and evaluation details](docs/AI_MONITOR.md).
+See the [complete AI methodology and demonstration](docs/AI_MONITOR.md), [reproducible network experiments](docs/NETWORK_EXPERIMENTS.md) and [detailed PDF report](docs/LANFLUX_Technical_Report.pdf). The screenshot shows a real controlled loopback transfer with test-only pacing, not a general Wi-Fi benchmark.
 
 ## Technology stack
 
@@ -114,7 +119,7 @@ This is an experimental unsupervised detector. Browser scheduling, file hashing,
 | Browser | HTML, CSS and native JavaScript; no frontend framework |
 | Transport | WebRTC RTCPeerConnection and RTCDataChannel; optional STUN/TURN |
 | Integrity | Pinned, licensed @noble/hashes incremental SHA-256 |
-| AI/ML | scikit-learn IsolationForest with session-local real observations |
+| AI/ML | scikit-learn IsolationForest and RandomForestRegressor; session-local real observations |
 | Verification | pytest, Node test runner and Playwright Chromium |
 
 ## Quick start
@@ -194,7 +199,7 @@ Room links are private bearer capabilities. LANFLUX uses unpredictable room IDs,
 
 ## Testing and evaluation
 
-Current local verification: **180 Python tests**, **50 JavaScript unit tests**, and all **15 existing Chromium scenarios plus their parent test**. Separate integration suites also pass **four actual coturn cases** and **three authenticated reverse-proxy cases**, each with its parent test. Scenarios exercise actual downloaded bytes, QR/link joining, approval, queues, rejection, cancellation, corruption, interruption, SHA-256, responsive layouts, diagnostics and real-observation AI learning/export/reset.
+Current local verification: **195 Python tests**, **51 JavaScript unit tests**, and **16 Chromium scenarios plus their parent test**. Separate integration suites also pass **four actual coturn cases** and **three authenticated reverse-proxy cases**, each with its parent test. Scenarios exercise actual downloaded bytes, QR/link joining, approval, queues, rejection, cancellation, corruption, interruption, SHA-256, responsive layouts, diagnostics and real-observation AI learning/export/reset.
 
 ```bash
 python -m pip install -r requirements-dev.txt
@@ -211,7 +216,7 @@ python scripts/check_release.py --self-test
 python scripts/check_release.py
 ```
 
-Use Node **24** for the development suite. CI is configured for Python 3.10/3.12, JavaScript, Chromium sharing, evaluation of the actual exported CSV, and isolated coturn/Nginx integrations. The new infrastructure job has been validated locally but has not yet run on GitHub for this upgrade. [Verification details](docs/VERIFICATION.md) distinguish automated coverage from physical-device, other-engine and TURN tests that remain unverified for this release.
+Use Node **24** for the development suite. CI is configured for Python 3.10/3.12, JavaScript, Chromium sharing, evaluation of the actual exported CSV, and isolated coturn/Nginx integrations. Local evidence and its limitations are recorded separately from the live GitHub Actions status. [Verification details](docs/VERIFICATION.md) distinguish automated coverage from physical-device, other-engine and TURN tests that remain unverified for this release.
 
 For reproducible network experiments, generate **1, 10 and 50 MiB** fixtures:
 
@@ -233,6 +238,12 @@ Run each size three times per condition and direction, clearing saved receives b
 | Large file refused | Stay below configured limits and clear completed receives after saving them. |
 | Transfer interrupted | Rejoin if necessary and select the file again. Cancelled or incomplete transfers are never marked verified. |
 | Metric unavailable | The browser has not supplied reliable data or the transfer was too short for that sample. |
+
+## Documentation and technical report
+
+The [documentation index](docs/README.md) links the complete [user guide](docs/USER_GUIDE.md), [architecture and protocol](docs/ARCHITECTURE.md), [security model](docs/SECURITY.md), [configuration](docs/CONFIGURATION.md), [deployment](docs/DEPLOYMENT.md), [AI methodology](docs/AI_MONITOR.md), [experiment procedure](docs/NETWORK_EXPERIMENTS.md) and [verification evidence](docs/VERIFICATION.md).
+
+Download the repository's **[LANFLUX Technical Report (PDF)](docs/LANFLUX_Technical_Report.pdf)** for the complete project explanation, real interface screenshots, algorithms, operating instructions and evidence boundaries. Its [source and rebuild instructions](docs/REPORT.md) keep the PDF reproducible from these same documents.
 
 ## Future improvements
 
