@@ -124,36 +124,100 @@ See the [complete AI methodology and demonstration](docs/AI_MONITOR.md), [reprod
 
 ## Quick start
 
-```bash
-git clone https://github.com/kasim672/LanFlux.git
-cd LanFlux
-```
+### Download for your computer
 
-**Linux / macOS**
+Only the computer hosting LANFLUX needs Python and these files. Your phone or another device joins through its browser.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-python -m lanflux
-```
+| Platform | Download | Run with |
+| --- | --- | --- |
+| Windows | [Download LANFLUX for Windows (ZIP)](https://github.com/kasim672/LanFlux/archive/refs/heads/main.zip) | PowerShell |
+| macOS | [Download LANFLUX for Mac (ZIP)](https://github.com/kasim672/LanFlux/archive/refs/heads/main.zip) | Terminal |
+| Linux | [Download LANFLUX for Linux (ZIP)](https://github.com/kasim672/LanFlux/archive/refs/heads/main.zip) | Terminal |
 
-**Windows PowerShell** — activation is optional:
+These links download the same Python source package. LANFLUX currently has no `.exe`, `.dmg` or native installer. Install **Python 3.10 or newer** first, then follow your platform's instructions below. Node/npm is required only for development tests.
+
+### Windows - PowerShell
+
+Install [Python for Windows](https://www.python.org/downloads/windows/) first, then reopen PowerShell. Python 3.12 is covered by this project's CI.
+
+1. Download the ZIP above. Right-click it and choose **Extract All**.
+2. Open the extracted **LanFlux-main** folder containing `requirements.txt`.
+3. Open **PowerShell** in that folder: type `powershell` in File Explorer's address bar and press Enter.
+4. Copy and run:
 
 ```powershell
+py -3 --version
 py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m lanflux
 ```
 
-Open **http://localhost:8000**. The default listens on the computer only. Health endpoint: **http://localhost:8000/health**. Node/npm is required only for development tests, not for running LANFLUX.
+If `py` is unavailable but `python --version` reports Python 3.10+, use `python` instead of `py -3` for the first two commands. Calling the virtual environment's Python directly avoids PowerShell activation-policy changes.
+
+To let your phone join over the same trusted Wi-Fi, stop the server with **Ctrl+C**, then run:
+
+```powershell
+.\.venv\Scripts\python.exe -m lanflux --lan --port 8000
+```
+
+Allow Python through Windows Firewall for **Private networks** when prompted. For later sessions, reopen PowerShell in the same folder and run the last command; installation is needed only once.
+
+### macOS - Terminal
+
+Install [Python for macOS](https://www.python.org/downloads/macos/) first if `python3` is unavailable or too old.
+
+1. Download the ZIP above and double-click it to extract **LanFlux-main**.
+2. Open **Terminal** and enter the extracted folder. For a download in the usual location:
+
+```bash
+cd ~/Downloads/LanFlux-main
+python3 --version
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
+./.venv/bin/python -m lanflux
+```
+
+Use the actual extracted folder path if you saved it elsewhere. Confirm `python3 --version` is 3.10 or newer before continuing.
+
+To enable trusted Wi-Fi access, stop the server with **Ctrl+C**, then run:
+
+```bash
+./.venv/bin/python -m lanflux --lan --port 8000
+```
+
+Allow incoming connections for Python if macOS asks. For later sessions, open Terminal in this folder and run the last command.
+
+### Linux - Terminal
+
+Extract the ZIP and open a terminal in **LanFlux-main**, then run:
+
+```bash
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
+./.venv/bin/python -m lanflux
+```
+
+Some distributions require their `python3-venv` package. For trusted Wi-Fi sharing, run `./.venv/bin/python -m lanflux --lan --port 8000` and permit the private-network firewall port.
+
+### Git alternative
+
+If Git is installed, you can clone instead of downloading/extracting the ZIP:
+
+```bash
+git clone https://github.com/kasim672/LanFlux.git
+cd LanFlux
+```
+
+Then follow your platform's commands starting with virtual-environment creation. The cloned folder is **LanFlux**; the ZIP folder is **LanFlux-main**.
+
+Open **http://localhost:8000** on the hosting computer. The default command listens on that computer only; `--lan` enables local-network access. Health endpoint: **http://localhost:8000/health**. Keep the terminal open while sharing and press **Ctrl+C** to stop. On your phone, scan the room's QR code rather than opening the phone's own localhost.
 
 ## Pair your phone
 
-Start the server with explicit local-network access:
+Start the server with explicit local-network access on macOS/Linux:
 
 ```bash
-python -m lanflux --lan --port 8000
+./.venv/bin/python -m lanflux --lan --port 8000
 ```
 
 On Windows, use `.\.venv\Scripts\python.exe -m lanflux --lan --port 8000`.
