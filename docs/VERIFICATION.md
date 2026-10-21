@@ -78,6 +78,8 @@ The real exported CSV is also evaluated with `aiml.evaluate`; no ground-truth ac
 
 Homepage, desktop/mobile dashboard, connected peer, successful verified receive, network diagnostics and trained AI panel images were captured from the running application. Browser tests mask room capabilities and invitation addresses. Measurement fields and transfer results are not fabricated. No physical-network address inspection is shown publicly.
 
+The documentation gallery was refreshed on 22 October 2026 using the same real-browser regression suite. It now includes focused desktop/mobile views, QR pairing with capability redaction, receiver approval, active transfer, settings and observed diagnostics during the paced transfer. The [screenshot manifest](screenshots/README.md) records every image and reproduction instructions. Screenshot-only framing does not alter file state, measurements or predictions. The refresh passed all 17 Chromium checks (16 scenarios and parent) with zero skips, plus 51 JavaScript unit tests and the frontend static checks.
+
 ## Remaining verification
 
 This upgrade does not claim fresh physical computer↔phone testing, Safari/Firefox coverage, public HTTPS hosting, college/cross-network reachability, publicly trusted TURN certificates or production relay operation, labeled anomaly accuracy, or general Wi-Fi throughput benchmarks. Mobile viewport emulation is not a physical phone. Previous physical-device success should be followed by the [manual computer-and-phone regression](NETWORK_EXPERIMENTS.md#manual-computer-and-phone-regression) before relying on a new deployment.

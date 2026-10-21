@@ -5,6 +5,7 @@
 - Add past-only RandomForest throughput prediction, purged chronological validation against a last-speed baseline, and transparent transfer-advisor rules using real session metadata.
 - Add stale/idle forecast cleanup and focused predictor/API/browser regressions without changing file-transfer pacing or protocol.
 - Expand user, architecture, security, AI, configuration and evaluation documentation; include a reproducible PDF technical report.
+- Refresh the real interface screenshot gallery with focused desktop/mobile views, approval, QR privacy redaction, active transfer, measured diagnostics and settings.
 - Preserve native ICE direct preference while supporting validated STUN, TURN/UDP, TURN/TCP and TURN/TLS on TCP 443 alternatives.
 - Keep TURN passwords out of anonymous configuration; issue short-lived coturn REST credentials only after room admission, refreshing them on every pairing. Preserve controlled static credential mode.
 - Report observed Direct P2P / TURN Relay / Connecting / Failed states and safe ICE server error summaries, with conditional troubleshooting guidance.

@@ -10,7 +10,7 @@ import {createHash} from 'node:crypto';
 const base = process.env.LANFLUX_TEST_URL || 'http://127.0.0.1:8765';
 const output = resolve('output/playwright');
 const docsShots = resolve(process.env.LANFLUX_SCREENSHOT_DIR || 'docs/screenshots');
-const captureOptions = (page,options = {}) => ({...options,
+const captureOptions = (page,options = {}) => ({animations:'disabled',caret:'hide',...options,
   mask:[page.locator('#room-id'),page.locator('#invitation-url'),page.locator('#qr-image'),page.locator('#qr-room-code')],
   maskColor:'#283a36',
 });
@@ -41,8 +41,8 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:240000}, async t => 
     }
     assert.equal((await fetch(`${base}/health`)).status, 200);
     browser = await chromium.launch({headless:true, channel:'chromium', args:['--host-resolver-rules=MAP lanflux.test 127.0.0.1', '--no-proxy-server'], ...(process.env.LANFLUX_CHROMIUM_PATH ? {executablePath:process.env.LANFLUX_CHROMIUM_PATH} : {})});
-    const contextA = await browser.newContext({acceptDownloads:true,viewport:{width:1440,height:1000}});
-    const contextB = await browser.newContext({acceptDownloads:true,viewport:{width:390,height:844}});
+    const contextA = await browser.newContext({acceptDownloads:true,reducedMotion:'reduce',viewport:{width:1440,height:1000}});
+    const contextB = await browser.newContext({acceptDownloads:true,reducedMotion:'reduce',viewport:{width:390,height:844}});
     const a = await contextA.newPage();
     const b = await contextB.newPage();
     for (const p of [a,b]) {
@@ -56,6 +56,7 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:240000}, async t => 
     await b.screenshot({path:resolve(output,'mobile.png'),fullPage:true});
     await a.screenshot({path:resolve(docsShots,'landing.png'),fullPage:true});
     await a.screenshot({path:resolve(docsShots,'homepage.png'),fullPage:false});
+    await b.screenshot({path:resolve(docsShots,'mobile-homepage.png'),fullPage:false});
 
     await t.test('create, invitation join, QR, and direct connection', async () => {
       await a.locator('#device-name').fill('Desktop');
@@ -82,6 +83,11 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:240000}, async t => 
       assert.equal(await b.locator('#invitation-url').inputValue(),invitation);
       assert.equal(await b.evaluate(() => window.lanfluxClient.roomId),room);
       await a.locator('.connection-panel').screenshot({path:resolve(docsShots,'connected-devices.png')});
+      await a.locator('#qr-open').click();
+      await a.waitForFunction(() => document.getElementById('qr-image').complete && document.getElementById('qr-image').naturalWidth > 0);
+      await a.locator('#qr-dialog').screenshot({path:resolve(docsShots,'qr-pairing.png'),
+        mask:[a.locator('#qr-image'),a.locator('#qr-room-code')],maskColor:'#283a36'});
+      await a.keyboard.press('Escape');
     });
 
     await t.test('invalid, missing and full invitation rooms fail gracefully without retry loops', async () => {
@@ -112,6 +118,7 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:240000}, async t => 
       await b.waitForFunction(() => [...window.lanfluxClient.transfers.values()].some(x => x.name === 'sample.bin' && x.status === 'approval-needed'));
       assert.equal(await b.evaluate(() => [...window.lanfluxClient.transfers.values()].find(x => x.name === 'sample.bin').bytes),0);
       assert.equal(await a.evaluate(() => [...window.lanfluxClient.transfers.values()].find(x => x.name === 'empty.txt').status),'queued');
+      await transfer(b,'sample.bin').screenshot({path:resolve(docsShots,'incoming-approval.png')});
       await transfer(b,'sample.bin').locator('[data-action="approve"]').click();
       await b.waitForFunction(() => [...window.lanfluxClient.transfers.values()].some(x => x.name === 'sample.bin' && x.status === 'completed'));
       await a.waitForFunction(() => [...window.lanfluxClient.transfers.values()].some(x => x.name === 'sample.bin' && x.status === 'completed'));
@@ -139,8 +146,22 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:240000}, async t => 
       await Promise.all([a.locator('#toast').waitFor({state:'hidden'}),b.locator('#toast').waitFor({state:'hidden'})]);
       await a.evaluate(() => {document.activeElement?.blur();window.scrollTo(0,0);});
       await b.evaluate(() => {document.activeElement?.blur();window.scrollTo(0,0);});
-      await a.screenshot(captureOptions(a,{path:resolve(docsShots,'desktop.png'),fullPage:true}));
-      await b.screenshot(captureOptions(b,{path:resolve(docsShots,'mobile.png'),fullPage:true}));
+      // Settle the sticky compositor layer before this element-only capture.
+      await a.evaluate(async () => {
+        document.querySelector('.workspace-nav').style.position = 'static';
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      });
+      try {
+        await a.locator('#workspace').screenshot({path:resolve(docsShots,'desktop.png'),animations:'disabled'});
+      } finally {
+        await a.evaluate(() => document.querySelector('.workspace-nav').style.removeProperty('position'));
+      }
+      await b.evaluate(() => {
+        const top = document.getElementById('workspace').getBoundingClientRect().top + scrollY;
+        window.scrollTo({top:top-document.querySelector('.workspace-nav').getBoundingClientRect().height-16,behavior:'instant'});
+      });
+      await b.screenshot(captureOptions(b,{path:resolve(docsShots,'mobile.png'),fullPage:false}));
+      await transfer(b,'sample.bin').screenshot({path:resolve(docsShots,'mobile-transfer.png')});
       await transfer(b,'sample.bin').screenshot({path:resolve(docsShots,'verified-transfer.png')});
     });
 
@@ -256,6 +277,9 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:240000}, async t => 
         assert.ok(!csv.includes('forecast-observed.bin'));
         await writeFile(resolve(output,'forecast-observed.csv'),csv);
         await a.locator('#ai-panel').screenshot({path:resolve(output,'forecast-observed.png')});
+        await a.locator('#ai-panel').screenshot({path:resolve(docsShots,'ai-intelligence.png')});
+        await transfer(a,'forecast-observed.bin').screenshot({path:resolve(docsShots,'active-transfer.png')});
+        await a.locator('#network-diagnostics .diagnostics-grid').screenshot({path:resolve(docsShots,'network.png')});
         await b.waitForFunction(() => [...window.lanfluxClient.transfers.values()].some(item => item.name === 'forecast-observed.bin' && item.status === 'completed' && item.hashStatus === 'verified'),null,{timeout:50000});
         const downloaded = b.waitForEvent('download');
         await transfer(b,'forecast-observed.bin').locator('[data-action="download"]').click();
@@ -283,7 +307,7 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:240000}, async t => 
       assert.equal(await a.locator('#ice-details-panel').isVisible(),true);
       await a.locator('#hide-ice-details').click();
       assert.equal(await a.locator('#ice-details').innerText(),'');
-      await a.locator('#network-diagnostics').screenshot({path:resolve(docsShots,'network.png')});
+      await a.locator('#network-diagnostics .diagnostics-grid').screenshot({path:resolve(output,'network-idle.png')});
       const csvDownload = a.waitForEvent('download');
       await a.evaluate(async () => {
         const {experimentsToCsv,downloadText} = await import('/static/experiments.js');
@@ -302,6 +326,7 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:240000}, async t => 
       assert.match(await readFile(await (await reportDownload).path(),'utf8'),/SHA-256/);
       await a.locator('#settings-open').click();
       assert.equal(await a.locator('#settings-dialog').isVisible(),true);
+      await a.locator('#settings-dialog').screenshot({path:resolve(docsShots,'settings.png')});
       await a.keyboard.press('Escape');
       assert.equal(await a.locator('#settings-dialog').isVisible(),false);
       await a.locator('#qr-open').click();
@@ -474,7 +499,7 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:240000}, async t => 
 
     if (!process.env.LANFLUX_TEST_URL) await t.test('LAN-style insecure HTTP supports room pairing and real downloads', async () => {
       // The reserved .test hostname maps locally but is not a trustworthy localhost origin.
-      const lanContext = await browser.newContext({acceptDownloads:true,viewport:{width:390,height:844}});
+      const lanContext = await browser.newContext({acceptDownloads:true,reducedMotion:'reduce',viewport:{width:390,height:844}});
       const x = await lanContext.newPage();
       const y = await lanContext.newPage();
       const lanBase = 'http://lanflux.test:8765';

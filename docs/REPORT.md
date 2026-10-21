@@ -24,7 +24,7 @@ This report explains the implementation, reproducible operation, security model 
 
 ![Actual LANFLUX homepage captured from the running application](screenshots/homepage.png)
 
-The homepage and sharing screenshots were captured in real Chromium application scenarios. Room capabilities and invitation addresses are masked where present. Narrow-screen images demonstrate viewport responsiveness, not a physical-device certification.
+The homepage and sharing screenshots were refreshed on 22 October 2026 in real Chromium application scenarios. The complete capture manifest is in [the screenshot gallery](screenshots/README.md). Room capabilities and invitation addresses are masked where present. Narrow-screen images demonstrate viewport responsiveness, not a physical-device certification.
 
 ![Actual AI panel with measured throughput, RTT and trained models](screenshots/ai-intelligence.png)
 
