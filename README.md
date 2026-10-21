@@ -161,7 +161,17 @@ On Windows, use `.\.venv\Scripts\python.exe -m lanflux --lan --port 8000`.
 
 Allow Python/port 8000 through the firewall on private networks. If adapter discovery is unavailable or another physical network is selected, copy `.env.example` to `.env`, set `LANFLUX_PUBLIC_URL` to your actual browser-reachable origin, restart, and create a new room. Opening the computer's LAN URL before creating a room also preserves that origin. No LAN address is hardcoded.
 
-Local HTTP works where the browser exposes WebRTC; hashing does not require Web Crypto. Use **HTTPS/WSS** for untrusted networks and internet deployment. Public hosting requires a reverse proxy, exact trusted origins, one Python worker and, for restrictive networks, a suitable TURN relay. Browser-visible TURN credentials need expiration and quotas; this version does not issue or rotate them. See [configuration and deployment](docs/CONFIGURATION.md).
+Local HTTP works where the browser exposes WebRTC; hashing does not require Web Crypto. Use **HTTPS/WSS** for untrusted networks and internet deployment. Public hosting requires a reverse proxy, exact trusted origins, one Python worker and, for restrictive networks, a suitable TURN relay. TURN credentials can be issued with a short lifetime using a server-held coturn signing secret. Relay quotas and authenticated public access remain operator responsibilities. See [configuration](docs/CONFIGURATION.md) and the [HTTPS/WSS + coturn deployment guide](docs/DEPLOYMENT.md).
+
+## Restricted college Wi-Fi
+
+Keep `LANFLUX_ICE_TRANSPORT_POLICY=all` for native ICE selection: reachable direct candidates remain preferred, with configured TURN alternatives available. Administrators can supply UDP/TCP TURN and **TURN over TLS/TCP on port 443** through `LANFLUX_TURN_URLS`. Public `/api/config` contains no relay passwords; admitted room peers receive fresh credentials on each pairing. For coturn, `LANFLUX_TURN_SHARED_SECRET` enables expiring HMAC credentials without exposing the signing secret to browsers.
+
+Network diagnostics shows **Direct P2P**, **TURN Relay**, **Connecting** or **Failed**; unsupported selected-pair statistics remain **Unavailable**. Safe ICE error summaries distinguish server reachability reports and authentication challenges without exposing private addresses. A configured relay is not proof that it was selected or is reachable.
+
+For use beyond the laptop's LAN, deploy FastAPI behind an authenticated HTTPS reverse proxy and configure a public invitation origin. Users then open the public HTTPS URL; laptop port 8000 is unnecessary. The [deployment guide](docs/DEPLOYMENT.md) includes Nginx, systemd and coturn templates, certificate/port requirements, relay quotas and a verification checklist.
+
+**You must provide** public hosting, DNS, valid web/TURN certificates, relay credentials and firewall rules. TURN TLS is not HTTPS: port 443 may still be blocked by protocol filtering, captive portals or an HTTP-only proxy. Use an IT-approved configuration or network; this feature does not bypass college policy. Local `--lan` mode remains available.
 
 ## Network diagnostics and integrity
 
@@ -184,7 +194,7 @@ Room links are private bearer capabilities. LANFLUX uses unpredictable room IDs,
 
 ## Testing and evaluation
 
-Verified locally for this release: **117 Python tests**, **41 JavaScript unit tests**, and **15 real Chromium scenarios plus their parent test**. Scenarios exercise actual downloaded bytes, QR/link joining, approval, queues, rejection, cancellation, corruption, interruption, SHA-256, responsive layouts, diagnostics and real-observation AI learning/export/reset.
+Current local verification: **180 Python tests**, **50 JavaScript unit tests**, and all **15 existing Chromium scenarios plus their parent test**. Separate integration suites also pass **four actual coturn cases** and **three authenticated reverse-proxy cases**, each with its parent test. Scenarios exercise actual downloaded bytes, QR/link joining, approval, queues, rejection, cancellation, corruption, interruption, SHA-256, responsive layouts, diagnostics and real-observation AI learning/export/reset.
 
 ```bash
 python -m pip install -r requirements-dev.txt
@@ -193,12 +203,15 @@ npm ci --ignore-scripts
 npx playwright install chromium
 npm run test:unit
 npm run test:e2e
+# Optional local integration suites require coturn and Nginx binaries:
+npm run test:turn
+npm run test:proxy
 python scripts/check_frontend.py
 python scripts/check_release.py --self-test
 python scripts/check_release.py
 ```
 
-Use Node **24** for the development suite. CI tests Python 3.10/3.12, JavaScript, Chromium sharing and evaluation of the browser's actual exported CSV. [Verification details](docs/VERIFICATION.md) distinguish automated coverage from physical-device, other-engine and TURN tests that remain unverified for this release.
+Use Node **24** for the development suite. CI is configured for Python 3.10/3.12, JavaScript, Chromium sharing, evaluation of the actual exported CSV, and isolated coturn/Nginx integrations. The new infrastructure job has been validated locally but has not yet run on GitHub for this upgrade. [Verification details](docs/VERIFICATION.md) distinguish automated coverage from physical-device, other-engine and TURN tests that remain unverified for this release.
 
 For reproducible network experiments, generate **1, 10 and 50 MiB** fixtures:
 
@@ -223,7 +236,7 @@ Run each size three times per condition and direction, clearing saved receives b
 
 ## Future improvements
 
-Streaming-to-disk on supported browsers, safely resumable transfers, broader device/browser coverage, production TURN credential issuance, and longer independently labeled anomaly evaluations are future work.
+Streaming-to-disk on supported browsers, safely resumable transfers, broader device/browser coverage, automated relay-secret rotation, and longer independently labeled anomaly evaluations are future work.
 
 ---
 

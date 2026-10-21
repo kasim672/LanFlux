@@ -1,0 +1,80 @@
+# Include inside nginx's http {} context. Replace domains/certificate paths.
+# This web host must not share its bound IP:443 with coturn TLS:443.
+map $http_upgrade $lanflux_connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+# AI telemetry has its own live-peer Bearer authorization. A request cannot send
+# HTTP Basic and Bearer in the same Authorization header. Only these exact API
+# paths bypass Basic; room creation/join/WS and every other route remain protected.
+map $uri $lanflux_auth_realm {
+    default "LANFLUX authorized users";
+    ~^/api/aiml/sample$ off;
+    ~^/api/aiml/reset$ off;
+    ~^/api/aiml/export$ off;
+}
+
+# Preserve the application's Bearer token, never forward Basic edge passwords.
+map $http_authorization $lanflux_backend_authorization {
+    default "";
+    "~^Bearer [A-Za-z0-9_-]+$" $http_authorization;
+}
+
+# Single trusted edge; tune limits for authorized users sharing one NAT.
+limit_req_zone $binary_remote_addr zone=lanflux_requests:10m rate=10r/s;
+limit_conn_zone $binary_remote_addr zone=lanflux_connections:10m;
+
+server {
+    listen 80;
+    server_name share.example.com;
+    # Provision certificates before enabling this complete example.
+    # Add your ACME challenge location only if your issuer requires HTTP validation.
+    return 308 https://share.example.com$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name share.example.com;
+    if ($host != share.example.com) { return 444; }
+
+    ssl_certificate /etc/letsencrypt/live/share.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/share.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_tickets off;
+
+    # Real access control: do not remove without a replacement authenticated edge.
+    auth_basic $lanflux_auth_realm;
+    auth_basic_user_file /etc/nginx/lanflux.htpasswd;
+
+    # Avoid logging bearer room paths / invitation queries.
+    access_log off;
+    # Restrict permissions/retention: errors may contain request context.
+    error_log /var/log/nginx/lanflux-error.log warn;
+    server_tokens off;
+    client_max_body_size 64k;
+    limit_req zone=lanflux_requests burst=40 nodelay;
+    limit_req_status 429;
+    limit_conn lanflux_connections 30;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $lanflux_connection_upgrade;
+        # Replace rather than append untrusted client-supplied headers.
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header Forwarded "";
+        proxy_set_header Authorization $lanflux_backend_authorization;
+        proxy_read_timeout 75s;
+        proxy_send_timeout 75s;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_cache off;
+        proxy_no_cache 1;
+        proxy_cache_bypass 1;
+    }
+}

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — restricted-network connectivity
+
+- Preserve native ICE direct preference while supporting validated STUN, TURN/UDP, TURN/TCP and TURN/TLS on TCP 443 alternatives.
+- Keep TURN passwords out of anonymous configuration; issue short-lived coturn REST credentials only after room admission, refreshing them on every pairing. Preserve controlled static credential mode.
+- Report observed Direct P2P / TURN Relay / Connecting / Failed states and safe ICE server error summaries, with conditional troubleshooting guidance.
+- Support explicit, exact reverse-proxy trust with private loopback defaults; add authenticated Nginx HTTPS/WSS, systemd and coturn deployment templates.
+- Preserve receiver approval, QR autojoining, sequential bidirectional transfers, SHA-256, cancellation and AI telemetry across the new connection modes.
+- Add ICE/authentication regression tests and real loopback coturn TCP/TLS transfer checks; extend CI with isolated relay and reverse-proxy validation.
+
 ## 0.3.0 — 2026-10-13
 
 - Add an experimental IsolationForest AI Network Monitor trained on real session metadata, with live predictions, bounded CSV export and chronological evaluation.

@@ -1,17 +1,19 @@
-# Release verification — LANFLUX 0.3.0
+# Verification — restricted-network upgrade (unreleased)
 
 ## Automated results
 
 | Check | Local result |
 | --- | --- |
-| Python 3.12 / pytest | 117 passed |
-| Node 24 unit tests | 41 passed |
-| Playwright Chromium | 15 real scenarios plus their parent test passed |
-| Frontend references and syntax | 115 unique IDs and 20 JavaScript files checked |
+| Python 3.12 / pytest | 180 passed |
+| Node 24 unit tests | 50 passed |
+| Existing Chromium suite | 15 real scenarios plus their parent test passed |
+| Actual local coturn suite | Four integration cases plus parent passed; zero skipped |
+| Actual Nginx HTTPS/WSS suite | Three integration cases plus parent passed; zero skipped |
+| Frontend references and syntax | 118 unique IDs and 24 JavaScript files checked |
 | Release file audit | Indexed/tracked paths and contents checked; secret-guard self-tests passed |
 | AI CSV evaluation | Actual browser-exported observations; chronological baseline and holdout, no invented dataset |
 
-CI additionally runs Python 3.10 and 3.12, JavaScript/static checks, Chromium and evaluation of the actual browser export. Current runs are available in [GitHub Actions](https://github.com/kasim672/LanFlux/actions/workflows/ci.yml).
+CI is configured to run Python 3.10 and 3.12, JavaScript/static checks, Chromium and actual browser CSV evaluation, plus a new isolated coturn/Nginx job. The upgrade has been verified locally; its new CI job has not yet run remotely. The published 0.3.0 baseline passed 117 Python tests, 41 JavaScript tests and the existing browser suite. Current runs are available in [GitHub Actions](https://github.com/kasim672/LanFlux/actions/workflows/ci.yml).
 
 ## Reproduce
 
@@ -22,6 +24,9 @@ npm ci --ignore-scripts
 npx playwright install chromium
 npm run test:unit
 npm run test:e2e
+# Install coturn/Nginx locally first, or set the binary variables below:
+npm run test:turn
+npm run test:proxy
 python scripts/check_frontend.py
 python scripts/check_release.py --self-test
 python scripts/check_release.py
@@ -29,6 +34,17 @@ python -m aiml.evaluate output/playwright/ai-observed.csv --output ai-holdout.cs
 ```
 
 The browser fixture uses a temporary Python server on port 8765 and separate real browser contexts. Downloads are compared byte-for-byte. Generated evidence stays in ignored `output/playwright/`. By default selected real screenshots update `docs/screenshots`; set `LANFLUX_SCREENSHOT_DIR=output/playwright/screenshots` to keep committed images untouched, as CI does.
+
+The optional suites use the installed `turnserver`/`nginx`, or explicit `LANFLUX_TURN_BINARY` / `LANFLUX_NGINX_BINARY` paths. They report a skip when dependencies are missing; set `LANFLUX_REQUIRE_NETWORK_SERVICES=1` to require execution, as CI does. Neither runtime package is bundled with LANFLUX. Test processes bind only loopback, use temporary credentials and certificates, and clean up afterward. Chromium pins only the generated test certificate key; system trust and production certificate verification are unchanged. Coturn's loopback-peer exception exists only in this isolated fixture; production templates deny those destinations.
+
+## Actual infrastructure checks
+
+- Native `all` policy keeps a direct path with a working relay configured.
+- With direct candidates withheld only by the test harness, actual relayed file bytes complete and verify. This simulates candidate unavailability, not a physical firewall.
+- An unavailable UDP TURN endpoint and a reachable TCP alternative produce an observed relay and verified download.
+- Actual TURN TLS/TCP carries approved file bytes with HTTPS/WSS signaling. Listeners use ephemeral high ports locally; TCP 443 configuration is covered by URI tests, not an external port-443 connectivity claim.
+- The shipped Nginx template passes its config check, rejects anonymous config/room/WebSocket access, and forwards exact AI Bearer routes to real backend authorization.
+- Authenticated HTTPS/WSS QR/automatic joining, receiver approval, exact SHA-256/download bytes, actual AI observations, CSV export and reset succeed through Nginx. Tests respect edge rate limits rather than disabling them.
 
 ## Regression coverage
 
@@ -47,6 +63,6 @@ Homepage, desktop/mobile dashboard, connected peer, successful verified receive,
 
 ## Remaining verification
 
-This release does not claim fresh physical computer↔phone testing, Safari/Firefox coverage, public HTTPS hosting, cross-network or TURN connectivity, labeled anomaly accuracy, or general Wi-Fi throughput benchmarks. Mobile viewport emulation is not a physical phone. Previous physical-device success should be followed by the [manual computer-and-phone regression](NETWORK_EXPERIMENTS.md#manual-computer-and-phone-regression) before relying on a new deployment.
+This upgrade does not claim fresh physical computer↔phone testing, Safari/Firefox coverage, public HTTPS hosting, college/cross-network reachability, publicly trusted TURN certificates or production relay operation, labeled anomaly accuracy, or general Wi-Fi throughput benchmarks. Mobile viewport emulation is not a physical phone. Previous physical-device success should be followed by the [manual computer-and-phone regression](NETWORK_EXPERIMENTS.md#manual-computer-and-phone-regression) before relying on a new deployment.
 
 The installed FastAPI/Starlette test client currently emits one dependency deprecation warning while all Python tests pass; it does not indicate a failed application test.

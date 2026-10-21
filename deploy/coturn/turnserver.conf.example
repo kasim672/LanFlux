@@ -1,0 +1,73 @@
+# Dedicated public TURN host/IP. Replace every placeholder before deployment.
+# Configuration syntax targets coturn 4.6.x; use a patched supported package.
+# See docs/DEPLOYMENT.md for version differences, firewall and certificate setup.
+
+# Documentation-only address: replace with the interface's actual IP.
+listening-ip=203.0.113.20
+relay-ip=203.0.113.20
+# If the public IP is 1:1 NAT rather than local, bind the actual private IP above
+# and set external-ip=YOUR_PUBLIC_IP/YOUR_PRIVATE_IP with port-preserving mapping.
+listening-port=3478
+tls-listening-port=443
+min-port=49160
+max-port=49259
+relay-threads=2
+
+realm=turn.example.com
+server-name=turn.example.com
+fingerprint
+use-auth-secret
+# Required: generate a private random secret matching LANFLUX_TURN_SHARED_SECRET.
+# Left empty deliberately; do not enable service until filled. Never publish it.
+static-auth-secret=
+stale-nonce=600
+max-allocate-lifetime=600
+
+cert=/etc/lanflux-turn/tls/fullchain.pem
+pkey=/etc/lanflux-turn/tls/privkey.pem
+# TLS >=1.2. Newer coturn releases may enforce this by default and remove these
+# two legacy disabling flags: inspect installed help and verify minimum TLS.
+no-tlsv1
+no-tlsv1_1
+
+# TLS-only client transport for the advertised turns:...:443?transport=tcp URL.
+# Keep TLS enabled. These options disable plaintext client listeners, not relays.
+no-udp
+no-tcp
+no-dtls
+# UDP relay endpoints remain enabled. This does NOT disable client TCP/TLS.
+no-tcp-relay
+no-multicast-peers
+no-cli
+no-rfc5780
+no-stun-backward-compatibility
+
+# Initial small deployment caps. Values are counts and bytes/second, not bits.
+user-quota=4
+total-quota=64
+max-bps=5000000
+bps-capacity=20000000
+
+# Deny internal/special destinations; also enforce provider/host egress policy.
+# Never add an allowed-peer-ip override for these ranges or allow-loopback-peers.
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.0.0.0-192.0.0.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=198.18.0.0-198.19.255.255
+denied-peer-ip=224.0.0.0-255.255.255.255
+denied-peer-ip=::-::ffff:ffff
+denied-peer-ip=::ffff:0:0-::ffff:ffff:ffff
+denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=ff00::-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+
+# Foreground under systemd. Keep journal access/retention restricted.
+pidfile=/run/lanflux-turn/turnserver.pid
+userdb=/var/lib/lanflux-turn/turndb
+log-file=stdout
+simple-log

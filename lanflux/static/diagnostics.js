@@ -1,4 +1,5 @@
 // Presentation only: every value comes from a real engine measurement.
+import {networkState, networkStateLabel} from './ice.js';
 export function formatBinaryBytes(value) {
   if (!Number.isFinite(value) || value < 0) return 'Unavailable';
   if (value === 0) return '0 B';
@@ -52,7 +53,11 @@ export class DiagnosticsView {
     write('state-signaling', measurement.signalingState || 'Unavailable');
     write('state-ice', measurement.iceState || 'Unavailable');
     write('state-channel', measurement.dataChannelState || 'Unavailable');
-    write('diagnostic-route', routeLabel(measurement.route));
+    const state = measurement.connectionState || networkState({connected: measurement.dataChannelState === 'open', route: measurement.route,
+      phase: measurement.iceState === 'failed' ? 'failed' : measurement.iceState === 'checking' ? 'connecting' : 'idle'});
+    write('diagnostic-route', networkStateLabel(state));
+    write('state-network', networkStateLabel(state));
+    write('ice-error-summary', measurement.iceErrorSummary || 'No ICE server error reports are available.');
     this.history = Array.isArray(measurement.history)
       ? measurement.history.filter((point) => Number.isFinite(point.timeSeconds) && Number.isFinite(point.bytesPerSecond) && point.bytesPerSecond >= 0).slice(-60)
       : [];

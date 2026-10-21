@@ -110,3 +110,38 @@ jobs:
           path: output/playwright/
           if-no-files-found: warn
           retention-days: 7
+
+  restricted-network:
+    name: Local TURN, TLS and HTTPS reverse proxy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      LANFLUX_REQUIRE_NETWORK_SERVICES: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install test services without public system listeners
+        run: |
+          sudo systemctl mask --now coturn.service nginx.service
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y coturn nginx
+      - name: Prepare isolated application and browser fixtures
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements.txt
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+      - name: Verify direct preference, TURN fallback and TLS relay transfers
+        run: npm run test:turn
+      - name: Verify authenticated HTTPS, WSS and AI Bearer forwarding
+        run: npm run test:proxy

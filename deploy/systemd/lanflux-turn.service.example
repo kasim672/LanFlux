@@ -1,0 +1,33 @@
+[Unit]
+Description=LANFLUX dedicated coturn TLS relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Account and binary paths may differ by distribution.
+User=turnserver
+Group=turnserver
+ExecStart=/usr/bin/turnserver -c /etc/lanflux-turn/turnserver.conf
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+RuntimeDirectory=lanflux-turn
+RuntimeDirectoryMode=0750
+StateDirectory=lanflux-turn
+StateDirectoryMode=0750
+UMask=0077
+NoNewPrivileges=true
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

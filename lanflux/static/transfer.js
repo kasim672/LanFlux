@@ -1,6 +1,7 @@
 /* LANFLUX: signaling carries connection messages only; file metadata and bytes use encrypted WebRTC. */
 import {sha256} from './vendor/noble-hashes/sha2.js';
 import {PayloadMetrics, selectedPair, pairRoute, equalDigest} from './metrics.js';
+import {validateIceServers, iceCapabilities, withoutTurnCredentials, applyPeerIce, peerConnectionConfig, networkState, connectionFailureHelp, CandidateErrors} from './ice.js';
 const CHUNK_SIZE = 16 * 1024;
 const HASH_CHUNK_SIZE = 256 * 1024;
 const BUFFER_HIGH = 256 * 1024;
@@ -74,10 +75,16 @@ export class LanfluxClient {
     this._bufferWaiters = new Set();
     this._sampling = false;
     this._historyWarned = false;
+    this._connectionPhase = 'idle';
+    this._iceErrors = new CandidateErrors();
   }
 
   _emit(event) { this.onEvent(event); }
-  _status(status, message) { this._emit({type: 'status', status, message}); }
+  _status(status, message) {
+    this._connectionPhase = status;
+    this._emit({type: 'status', status, message});
+    this._emitDiagnostics();
+  }
   _error(message) { this._emit({type: 'error', message}); }
   _update(transfer) {
     const {id, name, size, direction, status, bytes, speed, error, url, hashStatus, sha256: expectedSha256, actualSha256,
@@ -92,7 +99,9 @@ export class LanfluxClient {
   async init() {
     const response = await fetch('/api/config', {cache: 'no-store'});
     if (!response.ok) throw new Error('LANFLUX could not load its connection settings. Refresh and try again.');
-    this.config = await response.json();
+    const config = await response.json();
+    if (!['all', 'relay'].includes(config.ice_transport_policy ?? 'all')) throw new Error('Invalid connection mode configured by the LANFLUX administrator.');
+    this.config = {...config, ice_servers: validateIceServers(config.ice_servers || [])};
     this.relayOnly = this.config.ice_transport_policy === 'relay';
     this._emit({type: 'config', config: this.config});
     this._memory();
@@ -122,6 +131,7 @@ export class LanfluxClient {
     const session = ++this._session;
     this.roomId = roomId;
     this._metrics = new PayloadMetrics();
+    this._iceErrors = new CandidateErrors();
     this._signalChain = Promise.resolve();
     this._receiveChain = Promise.resolve();
     this._status('connecting', 'Joining your private room…');
@@ -146,6 +156,13 @@ export class LanfluxClient {
         let message;
         try { message = JSON.parse(event.data); } catch { return; }
         if (message.type === 'welcome') {
+          try { this._applyPeerIce(message); }
+          catch {
+            this._joinReject = null;
+            this.leave();
+            reject(new Error('The room supplied invalid STUN or TURN settings. Ask the administrator to check the connection configuration.'));
+            return;
+          }
           welcomed = true;
           clearTimeout(joinTimeout);
           this._joinReject = null;
@@ -180,6 +197,7 @@ export class LanfluxClient {
         if (!welcomed) reject(new Error('The room is unavailable, full, or expired. Create a new room and share its code.'));
         this.socket = null;
         this._closePeer('The signaling connection closed. Rejoin the room to continue.');
+        this._clearIceCredentials();
         clearInterval(this._timers);
         clearInterval(this._metricsTimer);
         this._timers = null;
@@ -201,6 +219,7 @@ export class LanfluxClient {
       case 'welcome': break;
       case 'role': this.initiator = Boolean(message.initiator); break;
       case 'peer-joined':
+        this._applyPeerIce(message);
         this._pairId = message.pair_id;
         this._setupStarted = performance.now();
         this._setupMs = null;
@@ -244,6 +263,7 @@ export class LanfluxClient {
         break;
       case 'peer-left':
         this._closePeer('The other device disconnected. Unfinished transfers were stopped.');
+        this._clearIceCredentials();
         if ('initiator' in message) this.initiator = Boolean(message.initiator);
         this.peerName = '';
         this._emit({type: 'peer', name: '', connected: false});
@@ -270,10 +290,16 @@ export class LanfluxClient {
     if (this.pc && this.pc.connectionState !== 'closed') return;
     const peerSession = ++this._peerSession;
     const pairId = this._pairId;
-    const pc = new RTCPeerConnection({iceServers: this.config.ice_servers, iceTransportPolicy: this.relayOnly ? 'relay' : 'all'});
+    const pc = new RTCPeerConnection(peerConnectionConfig(this.config, this.relayOnly));
     this.pc = pc;
+    this._iceErrors = new CandidateErrors();
     pc.onicecandidate = event => {
       if (this.pc === pc && event.candidate) this._signal({type: 'ice', candidate: event.candidate.toJSON(), pair_id: pairId});
+    };
+    pc.onicecandidateerror = event => {
+      if (this.pc !== pc || peerSession !== this._peerSession) return;
+      this._iceErrors.add(event);
+      this._emitDiagnostics();
     };
     pc.ondatachannel = event => {
       if (this.pc !== pc || peerSession !== this._peerSession) return;
@@ -282,7 +308,7 @@ export class LanfluxClient {
     };
     pc.onconnectionstatechange = () => {
       if (this.pc !== pc) return;
-      if (pc.connectionState === 'failed') this._connectionFailure('The devices could not connect. Check Wi-Fi/firewall settings; some networks require a configured TURN relay.');
+      if (pc.connectionState === 'failed') this._connectionFailure(connectionFailureHelp(this.config));
       else if (pc.connectionState === 'disconnected') this._status('connecting', 'Peer connection interrupted. Waiting for it to recover…');
       else if (pc.connectionState === 'connected' && this.connected) {
         this._status('connected', 'Connected. Choose files to share.');
@@ -766,16 +792,35 @@ export class LanfluxClient {
   }
 
   setRelayOnly(enabled) {
+    if (!enabled && this.config?.ice_transport_policy === 'relay') {
+      this._error('This LANFLUX host requires TURN relay connections. The administrator controls this setting.');
+      return false;
+    }
     if (this.roomId && this.socket) {
       this._error('Leave the current room before changing the connection mode.');
       return false;
     }
-    if (enabled && !this.config?.ice_servers?.some(server => (Array.isArray(server.urls) ? server.urls : [server.urls]).some(url => /^turns?:/.test(url)))) {
+    if (enabled && !iceCapabilities(this.config || {}).turnConfigured) {
       this._error('Relay-only mode needs a TURN server configured by the LANFLUX host.');
       return false;
     }
     this.relayOnly = Boolean(enabled);
     return true;
+  }
+
+  _applyPeerIce(message) {
+    const next = applyPeerIce(this.config || {}, message);
+    if (next !== this.config) {
+      this.config = next;
+      if (next.ice_transport_policy === 'relay') this.relayOnly = true;
+      this._emit({type: 'config', config: this.config});
+    }
+  }
+
+  _clearIceCredentials() {
+    if (!this.config) return;
+    this.config = withoutTurnCredentials(this.config);
+    this._emit({type: 'config', config: this.config});
   }
 
   _transferMetrics(transfer, now = performance.now(), sample = false) {
@@ -866,13 +911,16 @@ export class LanfluxClient {
         durationSeconds: measured.durationSeconds, etaSeconds: this.connected ? measured.etaSeconds : null,
         peakBytesPerSecond: measured.peakBytesPerSecond, rttMs: this._rttMs, setupMs: this._setupMs,
         history: this._metrics.history.map(sample => ({...sample})),
+        connectionState: networkState({connected: this.connected, route: this._route, phase: this._connectionPhase, peerState: this.pc?.connectionState}),
+        iceErrorCount: this._iceErrors.count, iceErrorSummary: this._iceErrors.summary(),
+        ...iceCapabilities(this.config || {}),
     }});
   }
 
   _tick() {
     if (this.socket?.readyState === WebSocket.OPEN) this._signal({type: 'ping'});
     if (this._connectDeadline && Date.now() > this._connectDeadline && !this.connected) {
-      this._connectionFailure('Connection timed out. Check that both devices can reach each other; restricted networks may need a TURN relay.');
+      this._connectionFailure(connectionFailureHelp(this.config, {timeout: true}));
     }
     for (const transfer of this.transfers.values()) {
       if (TERMINAL.has(transfer.status) || transfer.status === 'queued') continue;
@@ -903,7 +951,7 @@ export class LanfluxClient {
     }
     const pc = this.pc;
     this.pc = null;
-    if (pc) { pc.onconnectionstatechange = null; pc.onicecandidate = null; pc.ondatachannel = null; pc.close(); }
+    if (pc) { pc.onconnectionstatechange = null; pc.onicecandidate = null; pc.onicecandidateerror = null; pc.ondatachannel = null; pc.close(); }
     this._candidates = [];
     this._outgoing = [];
     this._activeSend = null;
@@ -939,6 +987,7 @@ export class LanfluxClient {
     clearInterval(this._metricsTimer);
     this._metricsTimer = null;
     this._closePeer('You left the room. Unfinished transfers were stopped.');
+    this._clearIceCredentials();
     this.roomId = null;
     this.initiator = false;
     this.peerName = '';

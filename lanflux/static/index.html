@@ -67,7 +67,7 @@
           <div class="device-diagram" aria-hidden="true"><div class="device-icon"><span></span></div><div class="connection-track"><i></i><i></i><i></i></div><div id="remote-device-icon" class="device-icon remote"><span></span></div></div>
           <div class="device-pair"><div><span class="small-label">This device</span><strong id="local-device-name">My browser</strong></div><div><span class="small-label">Other device</span><strong id="peer-name">Not connected</strong></div></div>
           <div class="connection-status" aria-live="polite" aria-atomic="true"><span id="connection-status" class="status-label">Ready when you are</span><p id="connection-message">Create or join a room to get started.</p></div>
-          <div class="route-row"><span>Connection route</span><strong id="connection-route">Not established</strong></div>
+          <div class="route-row"><span>Connection route</span><strong id="connection-route">Unavailable</strong></div>
           <p id="route-description" class="route-description">File contents travel over an encrypted WebRTC connection. Python handles signaling and measured network metadata.</p>
         </aside>
 
@@ -96,7 +96,7 @@
       </section>
 
       <section id="network-diagnostics" class="diagnostics-section" aria-labelledby="diagnostics-title">
-        <div class="section-heading diagnostics-heading"><div><p class="section-kicker">Measured in your browser</p><h2 id="diagnostics-title">A clear view of your connection.</h2><p class="muted">Live WebRTC states and file payload throughput. Missing browser measurements stay unavailable.</p></div><span id="diagnostic-route" class="route-badge">Route unavailable</span></div>
+        <div class="section-heading diagnostics-heading"><div><p class="section-kicker">Measured in your browser</p><h2 id="diagnostics-title">A clear view of your connection.</h2><p class="muted">Live WebRTC states and file payload throughput. Missing browser measurements stay unavailable.</p></div><span id="diagnostic-route" class="route-badge">Unavailable</span></div>
         <div class="diagnostics-grid">
           <section class="panel performance-panel" aria-labelledby="performance-title">
             <div class="panel-top"><h3 id="performance-title">Transfer performance</h3><span class="small muted">Latest 60 samples</span></div>
@@ -106,8 +106,8 @@
             <p class="measurement-note">MB/s and Mbps use decimal units. File sizes use KiB and MiB. Throughput counts file payload, not network capacity.</p>
           </section>
           <section class="panel network-panel" aria-labelledby="network-title"><div class="panel-top"><h3 id="network-title">Network diagnostics</h3><span class="state-label">WebRTC</span></div>
-            <dl class="network-states"><div><dt>Signaling state</dt><dd id="state-signaling">Unavailable</dd></div><div><dt>ICE connection</dt><dd id="state-ice">Unavailable</dd></div><div><dt>Data channel</dt><dd id="state-channel">Unavailable</dd></div><div><dt>Connection setup</dt><dd id="state-setup">Unavailable</dd></div></dl>
-            <div class="network-explainer"><h3>The route matters.</h3><p>A direct route connects the browsers. A TURN relay forwards their encrypted traffic. LANFLUX reports the detected route without guessing.</p></div>
+            <dl class="network-states"><div><dt>Connection state</dt><dd id="state-network">Unavailable</dd></div><div><dt>Signaling state</dt><dd id="state-signaling">Unavailable</dd></div><div><dt>ICE connection</dt><dd id="state-ice">Unavailable</dd></div><div><dt>Data channel</dt><dd id="state-channel">Unavailable</dd></div><div><dt>Connection setup</dt><dd id="state-setup">Unavailable</dd></div></dl>
+            <div class="network-explainer"><h3>The route matters.</h3><p>A direct route connects the browsers. A TURN relay forwards their encrypted traffic. LANFLUX reports the detected route without guessing. A connected browser with unavailable route statistics stays Unavailable.</p><p id="network-config-summary" class="field-description">Loading connection server configuration.</p><p id="ice-error-summary" class="field-description">No ICE server error reports are available.</p></div>
             <button id="inspect-connection" class="button secondary full" type="button">Inspect connection details</button><p class="field-description">Optional: may reveal private network addresses on this screen. Hide them before sharing a screenshot.</p>
             <div id="ice-details-panel" class="ice-details" hidden><div class="panel-top"><h3>Selected ICE candidates</h3><button id="hide-ice-details" class="button quiet compact" type="button">Hide</button></div><p id="ice-details-message" class="muted"></p><pre id="ice-details"></pre></div>
           </section>
@@ -138,7 +138,7 @@
     <div class="dialog-heading"><h2 id="settings-title">Your preferences</h2><button class="button quiet compact" data-close="settings-dialog" aria-label="Close settings">×</button></div>
     <form id="settings-form">
       <label for="settings-name">Device name</label><input id="settings-name" type="text" maxlength="40" required autocomplete="nickname"><p class="field-description">Used when you create or join your next room.</p>
-      <label class="checkbox-row" for="relay-only"><input id="relay-only" type="checkbox"><span><strong>Use TURN relay only</strong><span class="field-description">Applies to your next connection. Requires a TURN server configured by the administrator.</span></span></label>
+      <label class="checkbox-row" for="relay-only"><input id="relay-only" type="checkbox"><span><strong>Use TURN relay only</strong><span class="field-description">Optional for your next connection. Normally WebRTC can use direct candidates and configured TURN alternatives. A host-required relay setting cannot be disabled.</span></span></label>
       <div class="settings-limit"><strong>Browser storage limits</strong><p id="settings-limit-description">Received files are held in memory until cleared or this tab closes. Download them before clearing. Keep this tab open during sharing.</p></div>
       <button type="submit" class="button primary full">Save preferences</button>
     </form>
@@ -150,6 +150,7 @@
     <div class="help-item"><span class="help-number">2</span><div><h3>Pair with a private room</h3><p>Create a room and share its link, code, or QR. The second browser joins with a device name. Anyone with the link can join an empty slot, so share it privately.</p></div></div>
     <div class="help-item"><span class="help-number">3</span><div><h3>Choose, approve, and download</h3><p>Select files on either device. The receiver approves each file before it starts. Download received files before closing the tab or clearing history. Downloads are never saved on the server.</p></div></div>
     <div class="help-note"><h3>Connection &amp; browser support</h3><p>Use a recent Chrome, Edge, Firefox, or Safari. HTTPS is recommended, especially on mobile. Both tabs must stay open; mobile browsers may pause transfers in the background. Some Wi-Fi networks block devices from reaching each other.</p><p>WebRTC encrypts your transfer. A <strong>direct</strong> route connects the browsers; a <strong>TURN relay</strong> route carries encrypted traffic through a relay server. The connection panel shows the detected route.</p></div>
+    <div class="help-note"><h3>College Wi-Fi &amp; restricted networks</h3><p>Opening the website does not prove that two devices can reach each other. Client isolation, firewalls, or blocked UDP may prevent a direct connection. With TURN configured, the browser also checks relay alternatives. No file passes through FastAPI.</p><p>TURN over TLS/TCP on port 443 can help when other transports are blocked, but a network may block this too. Diagnostics shows configured alternatives and safe ICE error summaries. These do not identify the exact restriction. If pairing fails, ask the administrator to check the TURN configuration or try another network.</p></div>
     <div class="help-note"><h3>Integrity &amp; measurements</h3><p>LANFLUX computes a SHA-256 digest before sending, then verifies the received bytes before making a download available. A mismatch fails the transfer. This checks byte integrity; a peer-supplied digest does not authenticate who sent the file.</p><p>Network diagnostics measure payload throughput and WebRTC state. AI Network Monitor learns from real measured metadata and exports its observations as CSV. Its experimental predictions do not prove an attack. Export before resetting the baseline or leaving the room.</p></div>
     <p id="help-limits" class="muted">This version receives files in browser memory and uses a limited, sequential queue.</p>
     <p class="muted">Rooms expire automatically. Leave and create a new room if pairing fails. Relay connections require an administrator-configured TURN server.</p>

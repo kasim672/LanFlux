@@ -14,8 +14,10 @@ Copy `.env.example` to `.env`; `python -m lanflux` loads it automatically. Alter
 | `LANFLUX_MAX_ROOMS`, `LANFLUX_MAX_PEERS` | In-process resource caps: defaults 1000 and 512. |
 | `LANFLUX_MAX_FILE_MIB`, `LANFLUX_MAX_MEMORY_MIB` | Browser payload limits: maximum/default 64 and 128 MiB. Lower them for constrained phones. |
 | `LANFLUX_STUN_URLS` | Comma-separated STUN URLs; Google STUN defaults. Empty disables STUN for isolated-LAN tests. |
-| `LANFLUX_TURN_URLS` | Comma-separated `turn:`/`turns:` URLs; requires username and credential. |
-| `LANFLUX_TURN_USERNAME`, `LANFLUX_TURN_CREDENTIAL` | Browser-visible relay credentials. Never commit actual values. |
+| `LANFLUX_TURN_URLS` | Comma-separated `turn:`/`turns:` URLs; requires either the shared secret or both static credentials below. |
+| `LANFLUX_TURN_SHARED_SECRET` | Server-only coturn REST authentication secret, 32–4096 characters. Recommended for public deployments; must match coturn's `static-auth-secret`. Mutually exclusive with static username/credential. |
+| `LANFLUX_TURN_CREDENTIAL_TTL_SECONDS` | Lifetime of newly issued ephemeral TURN credentials: default 600; range 60–3600 seconds. |
+| `LANFLUX_TURN_USERNAME`, `LANFLUX_TURN_CREDENTIAL` | Alternative static browser-visible relay credentials for controlled private/admin deployments. Never commit actual values; leave both empty in shared-secret mode. |
 | `LANFLUX_ICE_TRANSPORT_POLICY` | `all` (default) or `relay`; relay-only requires a reachable configured TURN service. |
 
 ## Local Wi-Fi
@@ -44,6 +46,8 @@ Use HTTPS/WSS on untrusted networks. Trusted local HTTP may expose WebRTC, but H
 
 Run **one Python worker**: room membership, signaling and AI models are process-local. Put a TLS reverse proxy in front of a private Uvicorn upstream, forward WebSocket Upgrade, and preserve the browser-visible Host. Configure the exact public origin and avoid caching `/api/config`. Trust forwarded headers only from your own proxy; do not expose an upstream with blanket forwarded-IP trust. Proxy logs should redact invitation queries and room socket paths.
 
+The supported CLI accepts `--forwarded-allow-ips 127.0.0.1,::1` to trust exact proxy IPs; wildcards and CIDR ranges are rejected. Use `--no-proxy-headers` when no trusted proxy supplies these headers. The deployment example binds Python to `127.0.0.1:8000`, with Nginx on the same host. Do not publish port 8000 or add arbitrary public clients to the proxy trust list. See the complete [HTTPS, coturn and systemd deployment guide](DEPLOYMENT.md).
+
 For local TLS with certificates trusted by both devices:
 
 ```bash
@@ -54,15 +58,24 @@ The development server is not exposed publicly by default. A public deployment a
 
 ## Optional TURN
 
-Example placeholders, not operational credentials:
+For a separately operated coturn service, use ephemeral credentials. Example placeholders, not operational credentials:
 
 ```dotenv
-LANFLUX_TURN_URLS=turn:turn.example.com:3478?transport=udp,turns:turn.example.com:5349?transport=tcp
-LANFLUX_TURN_USERNAME=short-lived-user
-LANFLUX_TURN_CREDENTIAL=short-lived-credential
+LANFLUX_TURN_URLS=turns:turn.example.com:443?transport=tcp
+# Required: fill with a private random secret, >=32 characters; match coturn.
+LANFLUX_TURN_SHARED_SECRET=
+LANFLUX_TURN_CREDENTIAL_TTL_SECONDS=600
+LANFLUX_TURN_USERNAME=
+LANFLUX_TURN_CREDENTIAL=
 ```
 
-Credentials are delivered to browsers. Public hosting needs restricted, expiring relay credentials and quotas; LANFLUX currently reads environment credentials and does not issue or rotate them. No TURN service is bundled. Restrictive NATs, firewalls or isolated Wi-Fi may prevent remote connectivity without a suitable relay.
+The shared secret remains on the Python and coturn servers. `/api/config` exposes STUN and TURN availability flags, without TURN passwords. After room admission, `welcome` and each `peer-joined` WebSocket message deliver fresh per-peer TURN credentials and their expiration. LANFLUX uses coturn's timestamped username and Base64 HMAC-SHA1 credential format. Credentials reaching a browser are usable until their expiry; never treat them as private from that browser's user. Existing allocations can retain their session credentials; expiry primarily prevents new allocations with old credentials. Replacement peers receive fresh credentials. Keep both server clocks synchronized. [Coturn REST authentication reference](https://github.com/coturn/coturn/blob/master/README.turnserver#turn-rest-api).
+
+Room creation is anonymous, so admission is not account authentication. A public operator must apply edge access control, request limits, coturn allocation/bandwidth quotas and monitoring. The [deployment examples](DEPLOYMENT.md) include a password-protected Nginx edge and a separate TURN host. No TURN service is bundled or automatically provisioned.
+
+With the default `all` policy, the browser's native ICE agent evaluates permitted host, STUN and TURN candidates; TURN is available without an application-level reconnect loop. This does not guarantee a specific selection order or connectivity on every network. `relay` permits only relay candidates. [WebRTC ICE transport policy](https://w3c.github.io/webrtc-pc/#rtcicetransportpolicy-enum).
+
+TURN over TLS on TCP 443 is TURN traffic, not HTTPS. It may still be blocked by a college firewall, protocol inspection or allowlist. Both devices must reach the public website and TURN endpoint, and the TURN host needs working relay UDP ports. Ask the network administrator for an authorized path when policy blocks the service.
 
 Settings → Relay only applies to the next connection. Confirm **TURN relay** from the observed selected ICE pair before labeling an experiment as relayed. A configured relay is not proof that it was used.
 

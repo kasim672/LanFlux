@@ -1,0 +1,31 @@
+[Unit]
+Description=LANFLUX browser file sharing signaling
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lanflux
+Group=lanflux
+WorkingDirectory=/opt/lanflux
+EnvironmentFile=/etc/lanflux/lanflux.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/lanflux/.venv/bin/python -m lanflux --host 127.0.0.1 --port 8000 --forwarded-allow-ips 127.0.0.1,::1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

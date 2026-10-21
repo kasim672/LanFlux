@@ -2,6 +2,7 @@ import { LanfluxClient } from './transfer.js';
 import { DiagnosticsView, formatBinaryBytes as formatBytes, formatRate, formatSeconds, formatMilliseconds, routeLabel } from './diagnostics.js';
 import { invitedRoom } from './invitation.js';
 import { AINetworkMonitor } from './aiml.js';
+import { iceCapabilities, networkState, networkStateLabel } from './ice.js';
 
 const $ = (id) => document.getElementById(id);
 const terminalStates = new Set(['completed', 'rejected', 'cancelled', 'failed']);
@@ -11,6 +12,7 @@ let currentRoom = null;
 let invitation = '';
 let config = {};
 let status = 'idle';
+let currentRoute = 'unknown';
 let busy = false;
 let initialized = false;
 let toastTimer;
@@ -64,9 +66,10 @@ function setStatus(event) {
   $('connection-status').textContent = titles[status] || 'Connecting';
   $('connection-message').textContent = event.message || '';
   if (['idle', 'waiting', 'disconnected', 'failed'].includes(status)) {
-    $('connection-route').textContent = 'Not established';
+    currentRoute = 'unknown';
     $('route-description').textContent = 'File contents travel over an encrypted WebRTC connection. Python handles signaling and measured network metadata.';
   }
+  $('connection-route').textContent = networkStateLabel(networkState({connected: status === 'connected', route: currentRoute, phase: status}));
   refreshControls();
 }
 
@@ -91,9 +94,11 @@ function setRoom(room) {
 }
 
 function setRoute(route) {
-  $('diagnostic-route').textContent = routeLabel(route);
-  $('connection-route').textContent = route === 'direct' ? 'Direct peer connection' : route === 'relay' ? 'TURN relay' : 'Checking route';
-  $('route-description').textContent = route === 'relay' ? 'Your encrypted file traffic passes through a TURN relay. It is not a direct connection.' : route === 'direct' ? 'Your file contents travel directly between these browsers over encrypted WebRTC.' : 'WebRTC encrypts file traffic. The route will appear once the connection is established.';
+  currentRoute = route;
+  const state = networkStateLabel(networkState({connected: status === 'connected', route, phase: status}));
+  $('diagnostic-route').textContent = state;
+  $('connection-route').textContent = state;
+  $('route-description').textContent = route === 'relay' ? 'Your encrypted file traffic passes through a TURN relay. It is not a direct connection.' : route === 'direct' ? 'Your file contents travel directly between these browsers over encrypted WebRTC.' : 'WebRTC encrypts file traffic. The browser has not exposed a reliable route measurement.';
 }
 
 function updateLimits() {
@@ -104,6 +109,12 @@ function updateLimits() {
   const limits = `Received files are held in memory${memoryLimit > 0 ? `, up to ${formatBytes(memoryLimit)} total` : ''}${fileLimit > 0 ? `, with ${formatBytes(fileLimit)} per file` : ''}. Download and clear completed files to free space. Keep this tab open.`;
   $('settings-limit-description').textContent = limits;
   $('help-limits').textContent = `${limits}${queueLimit > 0 ? ` The queue accepts up to ${queueLimit} files.` : ''}`;
+  const capabilities = iceCapabilities(config);
+  $('network-config-summary').textContent = capabilities.turnConfigured
+    ? capabilities.tls443Configured ? 'TURN fallback is configured, including TLS/TCP port 443. This does not prove the relay is reachable from this network.' : 'TURN fallback is configured. No TLS/TCP port 443 alternative is configured.'
+    : capabilities.stunConfigured ? 'STUN discovery is configured. No TURN relay fallback is configured.' : 'Local discovery only. No STUN or TURN servers are configured.';
+  $('relay-only').disabled = config.ice_transport_policy === 'relay';
+  if (config.ice_transport_policy === 'relay') $('relay-only').checked = true;
 }
 
 function actionButton(action, label, primary = false) {
@@ -278,7 +289,8 @@ const client = new LanfluxClient({ onEvent(event) {
       $('peer-name').textContent = 'Not connected';
       $('ice-details-panel').hidden = true;
       $('ice-details').textContent = '';
-      $('connection-route').textContent = 'Not established';
+      currentRoute = 'unknown';
+      $('connection-route').textContent = 'Unavailable';
       $('route-description').textContent = 'File contents travel over an encrypted WebRTC connection. Python handles signaling and measured network metadata.';
       refreshControls();
       break;
@@ -468,7 +480,7 @@ $('settings-form').addEventListener('submit', (event) => {
   const name = $('settings-name').value.trim();
   if (!name) { $('settings-name').focus(); return; }
   const relayOnly = $('relay-only').checked;
-  if (relayOnly && !config.ice_servers?.some((server) => (Array.isArray(server.urls) ? server.urls : [server.urls]).some((url) => /^turns?:/.test(url)))) {
+  if (relayOnly && !iceCapabilities(config).turnConfigured) {
     showError('TURN relay is not configured on this server. Ask the administrator to add TURN settings first.');
     $('settings-dialog').close();
     return;
@@ -495,8 +507,8 @@ async function start() {
     if (!window.RTCPeerConnection) throw new Error('WebRTC is unavailable in this browser. Try a current browser and open LANFLUX over HTTPS.');
     await client.init();
     // Validate persisted relay preference against this server's configuration.
-    const hasTurn = config.ice_servers?.some((server) => (Array.isArray(server.urls) ? server.urls : [server.urls]).some((url) => /^turns?:/.test(url)));
-    const relayOnly = (typeof saved.relayOnly === 'boolean' ? saved.relayOnly : config.ice_transport_policy === 'relay') && hasTurn;
+    const hasTurn = iceCapabilities(config).turnConfigured;
+    const relayOnly = config.ice_transport_policy === 'relay' || saved.relayOnly === true && hasTurn;
     $('relay-only').checked = Boolean(relayOnly);
     client.setRelayOnly(Boolean(relayOnly));
     initialized = true;

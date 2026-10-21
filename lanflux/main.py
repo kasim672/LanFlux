@@ -149,7 +149,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/config")
     async def config(request: Request):
-        return {**settings.browser_config(), "invitation_base_url": await base_url(request)}
+        return {**settings.browser_config(public=True), "invitation_base_url": await base_url(request)}
 
     @app.post("/api/rooms", status_code=201)
     async def create_room(request: Request):
@@ -210,12 +210,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if not await peer.send({"type": "welcome", "peer_id": peer.peer_id, "initiator": other is None,
                                     "room_id": room_id, "expires_at": expires_iso(room.expires_at),
                                     "telemetry_token": peer.telemetry_token,
+                                    **settings.peer_ice_config(peer.peer_id),
                                     "invitation_url": room.invitation_url or f"{await base_url(websocket)}/?room={room_id}"}):
                 return
             if other:
-                if not await peer.send({"type": "peer-joined", "name": other.name, "pair_id": room.pair_id}):
+                if not await peer.send({"type": "peer-joined", "name": other.name, "pair_id": room.pair_id,
+                                        **settings.peer_ice_config(peer.peer_id)}):
                     return
-                if not await other.send({"type": "peer-joined", "name": peer.name, "pair_id": room.pair_id}):
+                if not await other.send({"type": "peer-joined", "name": peer.name, "pair_id": room.pair_id,
+                                         **settings.peer_ice_config(other.peer_id)}):
                     await manager.leave(room_id, other)
                     await other.close()
             peer_limiter = RateLimiter(capacity=1)
