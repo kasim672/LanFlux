@@ -97,7 +97,7 @@ jobs:
         run: npm run test:e2e
       - name: Evaluate actual browser-exported observations
         run: |
-          .venv/bin/python -m aiml.evaluate output/playwright/ai-observed.csv --output output/playwright/ai-holdout-${{ github.run_id }}-${{ github.run_attempt }}.csv > output/playwright/ai-evaluation-${{ github.run_id }}-${{ github.run_attempt }}.txt
+          .venv/bin/python -m aiml.evaluate output/playwright/ai-observed.csv --baseline-only --output output/playwright/ai-holdout-${{ github.run_id }}-${{ github.run_attempt }}.csv > output/playwright/ai-evaluation-${{ github.run_id }}-${{ github.run_attempt }}.txt
           cat output/playwright/ai-evaluation-${{ github.run_id }}-${{ github.run_attempt }}.txt
       - name: Verify committed screenshots were preserved
         if: always()

@@ -1,17 +1,17 @@
 # Verification - predictive networking and restricted-network upgrade
 
-Local checks below were executed on 21 October 2026. This record describes the current implementation extending published 0.3.0; it is not a new versioned release or a physical-network performance benchmark.
+The latest adaptive-transfer checks were executed on 23 October 2026. Older infrastructure and screenshot checks retain their original dates below. This record describes the current implementation extending published 0.3.0; it is not a new versioned release or a physical-network performance benchmark.
 
 ## Automated results
 
 | Check | Local result |
 | --- | --- |
-| Python 3.12 / pytest | 195 passed |
-| Node 24 unit tests | 51 passed |
-| Existing Chromium suite | 16 real scenarios plus their parent test passed |
-| Actual local coturn suite | Four integration cases plus parent passed; zero skipped |
-| Actual Nginx HTTPS/WSS suite | Three integration cases plus parent passed; zero skipped |
-| Frontend references and syntax | 125 unique IDs and 24 JavaScript files checked |
+| Python 3.12 / pytest | 203 passed |
+| Node 24 unit tests | 70 passed |
+| Chromium suite | 18 real scenarios plus their parent test passed |
+| Actual local coturn suite | Four cases plus parent passed on 21 October; service binary unavailable for latest local rerun |
+| Actual Nginx HTTPS/WSS suite | Three cases plus parent passed on 21 October; service binary unavailable for latest local rerun |
+| Frontend references and syntax | 136 unique IDs and 28 JavaScript files checked |
 | Release file audit | Indexed/tracked paths and contents checked; secret-guard self-tests passed |
 | AI CSV evaluation | Actual browser-exported observations; chronological baseline and holdout, no invented dataset |
 
@@ -32,7 +32,7 @@ npm run test:proxy
 python scripts/check_frontend.py
 python scripts/check_release.py --self-test
 python scripts/check_release.py
-python -m aiml.evaluate output/playwright/ai-observed.csv --output output/ai-holdout.csv
+python -m aiml.evaluate output/playwright/ai-observed.csv --baseline-only --output output/ai-holdout.csv
 ```
 
 The browser fixture uses a temporary Python server on port 8765 and separate real browser contexts. Downloads are compared byte-for-byte. Generated evidence stays in ignored `output/playwright/`. By default selected real screenshots update `docs/screenshots`; set `LANFLUX_SCREENSHOT_DIR=output/playwright/screenshots` to keep committed images untouched, as CI does.
@@ -61,7 +61,7 @@ The optional suites use the installed `turnserver`/`nginx`, or explicit `LANFLUX
 - A real 8 MiB DataChannel file with test-only bounded sender pacing supplies varied active observations for forecast training in Chromium. The receiver verifies and downloads the original bytes; UI forecasts and validation errors are populated from actual measurements, then cleared when idle. No telemetry injection is used. This controlled loopback workload is not a Wi-Fi speed benchmark.
 - Narrow mobile viewport overflow checks and cached-page cleanup/reinitialization. The latter dispatches persisted page lifecycle events to test the application's hook; it is not a claim of native BFCache behavior across engines.
 
-## Current execution details
+## Historical execution details - 21 October 2026
 
 - `.venv/bin/python -m pytest -q`: 195 passed, one Starlette/httpx dependency deprecation warning; 8.15 seconds.
 - `npm run test:unit`: 51 passed, zero failed/skipped.
@@ -79,6 +79,29 @@ The real exported CSV is also evaluated with `aiml.evaluate`; no ground-truth ac
 Homepage, desktop/mobile dashboard, connected peer, successful verified receive, network diagnostics and trained AI panel images were captured from the running application. Browser tests mask room capabilities and invitation addresses. Measurement fields and transfer results are not fabricated. No physical-network address inspection is shown publicly.
 
 The documentation gallery was refreshed on 22 October 2026 using the same real-browser regression suite. It now includes focused desktop/mobile views, QR pairing with capability redaction, receiver approval, active transfer, settings and observed diagnostics during the paced transfer. The [screenshot manifest](screenshots/README.md) records every image and reproduction instructions. Screenshot-only framing does not alter file state, measurements or predictions. The refresh passed all 17 Chromium checks (16 scenarios and parent) with zero skips, plus 51 JavaScript unit tests and the frontend static checks.
+
+## Adaptive-transfer verification - 23 October 2026
+
+Executed commands and final results:
+
+| Command | Result |
+| --- | --- |
+| `python -m pytest -q` | 203 passed; one existing Starlette/httpx deprecation warning; 8.13 s |
+| `npm run test:unit` | 70 passed, zero skipped |
+| `LANFLUX_SCREENSHOT_DIR=output/playwright/screenshots npm run test:e2e` | 19 passed (18 scenarios plus parent), zero skipped; 158.36 s |
+| `python scripts/check_frontend.py` | 136 unique IDs, references/CSP/assets and 28 JS syntax checks passed |
+| `python scripts/check_release.py --self-test` | Passed |
+| `python -m aiml.evaluate output/playwright/ai-observed.csv --baseline-only --output NEW.csv` | Actual exported observations evaluated; excluded policy rows reported; no accuracy claim |
+| `npm run test:turn` / `npm run test:proxy` | One suite skipped each locally because coturn/Nginx binaries are missing; CI requires their execution |
+
+
+- The full Python suite covers strategy enum validation, baseline-only learning, future-label invalidation across policy changes, unknown remote policy, intervention-conditioned inference, CSV provenance and explicit baseline-only CLI evaluation.
+- JavaScript tests cover original transfer protocol plus optional pacing boundaries, stale/invalid/poorly validated forecast fallback, cancellation during delay, channel interruption, SCTP frame limits, fixed burst anchors and baseline recovery periods.
+- Comparison tests cover verified-only completion means, all terminal outcomes, grouping by size/route/requested/effective strategy, privacy-safe exports, bounded retention, clear-during-active behavior and distinct-ping RTT thresholds.
+- A real browser scenario sends and downloads matching bytes under each selected strategy, checks disabled controls and CSV/report export, and verifies that unavailable ML evidence retains baseline behavior.
+- A separate controlled 8 MiB browser transfer delays actual peer pong responses while preserving the original backpressure check. The controller reacts to measured RTT, records a nonzero pacing delay, and the receiver verifies and downloads the exact bytes. It does not inject throughput or RTT measurements. This is browser-scheduling fault injection, not a physical Wi-Fi performance comparison.
+- Existing QR joining, two-way consented transfers, zero-byte files, cancellation, corruption, disconnect/reload, mobile viewport and real AI learning scenarios remain covered.
+- No physical-device performance benefit, labeled anomaly accuracy, funding outcome or secure byte-resume is claimed. Unit inputs are synthetic fixtures; actual browser exports are real observations from controlled loopback workloads.
 
 ## Remaining verification
 

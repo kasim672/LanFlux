@@ -27,7 +27,8 @@ def load_csv(path: Path) -> list[tuple[str, Observation]]:
                 raise ValueError('CSV must contain chronological, timezone-aware measurement timestamps.')
             sample = Observation(rtt_ms=float(row['rtt_ms']), throughput_mbps=float(row['throughput_mbps']),
                                  active_transfer=flag == 'true', interval_ms=float(row['interval_ms']),
-                                 total_bytes=int(row['total_bytes']), route=row['route'])
+                                 total_bytes=int(row['total_bytes']), route=row['route'],
+                                 strategy=row.get('strategy', 'baseline'))
             if last_total is not None and sample.total_bytes < last_total:
                 raise ValueError('CSV must contain measurements from one uninterrupted baseline session.')
             rows.append((row['observed_at'], sample))
@@ -37,7 +38,10 @@ def load_csv(path: Path) -> list[tuple[str, Observation]]:
     return rows
 
 
-def evaluate(rows: list[tuple[str, Observation]], train_samples: int = MIN_SAMPLES):
+def evaluate(rows: list[tuple[str, Observation]], train_samples: int = MIN_SAMPLES, *, baseline_only: bool = False):
+    excluded = sum(sample.strategy != 'baseline' for _, sample in rows) if baseline_only else 0
+    if baseline_only:
+        rows = [(stamp, sample) for stamp, sample in rows if sample.strategy == 'baseline']
     if train_samples < MIN_SAMPLES or len(rows) < train_samples + 10:
         raise ValueError(f'Need at least {train_samples} baseline rows and 10 later evaluation rows. Collect more real samples.')
     baseline = [sample for _, sample in rows[:train_samples]]
@@ -51,12 +55,14 @@ def evaluate(rows: list[tuple[str, Observation]], train_samples: int = MIN_SAMPL
     anomalies = sum(row['prediction'] == 'Anomaly' for row in results)
     report = (
         f'IsolationForest chronological evaluation\n'
+        f'Nonbaseline/unknown rows explicitly excluded: {excluded}\n'
         f'Training rows: {train_samples}; later evaluation rows: {len(results)}\n'
         f'Flagged anomalies: {anomalies} ({anomalies / len(results):.1%})\n'
         f'Mean observed RTT: {mean(row["rtt_ms"] for row in results):.3f} ms\n'
         f'Mean observed payload throughput: {mean(row["throughput_mbps"] for row in results):.3f} Mbps\n'
         f'Scores: {min(row["anomaly_score"] for row in results):.5f} to {max(row["anomaly_score"] for row in results):.5f}\n'
         'Positive score = anomaly relative to this baseline; not an attack verdict or probability.\n'
+        'Paced holdout rows are intervention-conditioned; pacing itself may cause a deviation.\n'
         'Accuracy/precision/recall unavailable: these observations have no verified ground-truth labels.\n'
         'The CSV is supplied by the caller; this script cannot attest its measurement provenance.\n'
     )
@@ -66,13 +72,14 @@ def evaluate(rows: list[tuple[str, Observation]], train_samples: int = MIN_SAMPL
 def main():
     parser = argparse.ArgumentParser(description='Evaluate real LANFLUX telemetry without fabricated training data.')
     parser.add_argument('csv', type=Path, help='CSV downloaded from AI Network Monitor')
+    parser.add_argument('--baseline-only', action='store_true', help='Explicitly exclude paced/unknown rows from both training and evaluation; report the count')
     parser.add_argument('--train-samples', type=int, default=MIN_SAMPLES)
     parser.add_argument('--output', type=Path, help='Write holdout predictions to a new CSV file')
     args = parser.parse_args()
     try:
         if args.output and args.output.exists():
             raise ValueError('Output already exists. Choose a new output filename.')
-        report, results = evaluate(load_csv(args.csv), args.train_samples)
+        report, results = evaluate(load_csv(args.csv), args.train_samples, baseline_only=args.baseline_only)
         if args.output:
             with args.output.open('x', newline='', encoding='utf-8') as target:
                 writer = csv.DictWriter(target, fieldnames=list(results[0]))

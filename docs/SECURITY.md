@@ -82,7 +82,7 @@ Models are separate for each reporting peer. Pair changes, departure, reset, exp
 
 Authorized clients can submit misleading telemetry. The models are experimental, not adversarially robust attack detectors. IsolationForest outliers can reflect workload/CPU/browser scheduling changes; a forecast can be worse than the last-observed-speed baseline. Genuine future measurements are needed to label forecast examples, with chronological purging before holdout evaluation. Synthetic fixtures are limited to tests, and no idle-data success claim is substituted for active-transfer forecasting.
 
-Model fitting and inference run off the async event loop under bounded concurrency. The frontend clears stale forecasts and treats API/model failures as unavailable. AI predictions do not change the file protocol, approval, integrity rules, chunk size or pacing. Sharing remains independent of AI availability.
+Model fitting and inference run off the async event loop under bounded concurrency. The frontend clears stale forecasts and treats API/model failures as unavailable. Optional, explicitly selected application pacing adds bounded sender waits; AI predictions do not change file protocol, approval, integrity rules or chunk size. Stale, invalid or poorly validated evidence restores baseline sending. Policy provenance excludes paced and unknown remote-policy data from model training. Sharing remains independent of AI availability.
 
 ## TURN credential handling
 

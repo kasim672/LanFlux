@@ -2169,3 +2169,12 @@ input[readonly] {
 }
 
 .ai-intelligence { border-top: 1px solid var(--border, #34443b); margin-top: 20px; padding-top: 20px; }
+
+/* Transfer experiment controls share the monitor's existing visual vocabulary. */
+#transfer-strategy { display:block; width:100%; max-width:36rem; margin-top:.65rem; padding:.8rem 1rem; color:var(--text, #edf5f1); background:#14201d; border:1px solid var(--border, #34443b); border-radius:10px; font:inherit; }
+#transfer-strategy:focus-visible, .comparison-details summary:focus-visible { outline:2px solid #82dfbe; outline-offset:4px; }
+#transfer-strategy:disabled { opacity:.65; }
+.comparison-details { margin-top:1.25rem; padding-top:1rem; border-top:1px solid var(--border, #34443b); }
+.comparison-details summary { cursor:pointer; font-weight:600; padding:.4rem 0; }
+.comparison-summary { display:grid; gap:.5rem; margin:.75rem 0; }
+.comparison-summary p { padding:.75rem; margin:0; background:rgba(130,223,190,.04); border-radius:8px; overflow-wrap:anywhere; font-size:.85rem; line-height:1.6; }

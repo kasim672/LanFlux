@@ -1,9 +1,13 @@
 # Changelog
 
-## Unreleased — predictive networking and restricted-network connectivity
+## Unreleased — adaptive transfer intelligence and restricted-network connectivity
 
 - Add past-only RandomForest throughput prediction, purged chronological validation against a last-speed baseline, and transparent transfer-advisor rules using real session metadata.
-- Add stale/idle forecast cleanup and focused predictor/API/browser regressions without changing file-transfer pacing or protocol.
+- Add stale/idle forecast cleanup and focused predictor/API/browser regressions.
+- Add opt-in baseline/rule-based/ML-assisted application pacing with evidence gates, bounded bursts, recovery intervals and safe fallback; preserve file protocol v2.
+- Exclude paced, mixed-direction and unknown-policy observations from model training; preserve policy provenance in telemetry CSV.
+- Add local three-strategy comparisons, distinct-ping RTT statistics, verified-outcome grouping and privacy-safe CSV/readable exports.
+- Document competition research contribution, reproducible experiments and the separately deferred authenticated byte-recovery extension.
 - Expand user, architecture, security, AI, configuration and evaluation documentation; include a reproducible PDF technical report.
 - Refresh the real interface screenshot gallery with focused desktop/mobile views, approval, QR privacy redaction, active transfer, measured diagnostics and settings.
 - Preserve native ICE direct preference while supporting validated STUN, TURN/UDP, TURN/TCP and TURN/TLS on TCP 443 alternatives.

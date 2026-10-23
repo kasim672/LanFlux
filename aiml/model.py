@@ -27,6 +27,7 @@ class Observation(BaseModel):
     interval_ms: float = Field(ge=750, le=10000)
     total_bytes: int = Field(ge=0, le=2**53 - 1)
     route: Literal['direct', 'relay', 'unknown']
+    strategy: Literal['baseline', 'rules', 'ml', 'unknown'] = 'baseline'
 
 
 def feature_row(observation: Observation) -> list[float]:
@@ -37,6 +38,8 @@ def feature_row(observation: Observation) -> list[float]:
 def fit_baseline(observations: list[Observation]) -> IsolationForest:
     if len(observations) < MIN_SAMPLES:
         raise ValueError(f'At least {MIN_SAMPLES} measured samples are required.')
+    if any(sample.strategy != 'baseline' for sample in observations):
+        raise ValueError('Anomaly training requires unpaced baseline observations.')
     model = IsolationForest(n_estimators=64, max_samples=min(len(observations), 256),
                             contamination='auto', random_state=42, n_jobs=1)
     model.fit([feature_row(sample) for sample in observations])
@@ -81,12 +84,12 @@ class NetworkMonitor:
             raise ValueError('Samples must be at least 750 ms apart.')
         if self.last_total is not None and observation.total_bytes < self.last_total:
             raise ValueError('Payload byte counts must not decrease within a session.')
-        if self.first_at is None:
+        if self.first_at is None and observation.strategy == 'baseline':
             self.first_at = now
         self.last_at, self.last_total = now, observation.total_bytes
         phase = 'evaluation' if self.model is not None else 'training'
         label, score, message = None, None, None
-        if self.model is None:
+        if self.model is None and observation.strategy == 'baseline':
             # At most 120 candidates, even when telemetry is constant/uninformative.
             self.training.append(observation)
             self.training = self.training[-120:]
@@ -97,8 +100,13 @@ class NetworkMonitor:
                 message = 'Baseline trained. Prediction begins with the next measured sample.'
             elif len(self.training) >= MIN_SAMPLES and not varied:
                 message = 'Collecting training data: more measurement variation is needed. Try normal file transfers.'
-        else:
+        elif self.model is not None:
             label, score = prediction(self.model, observation)
+            if observation.strategy != 'baseline':
+                message = 'Paced or unknown-policy observations evaluated against an unpaced baseline; pacing itself can explain a deviation.'
+        else:
+            phase = 'intervention'
+            message = 'Collecting baseline training data: paced and unknown-policy observations are excluded from training.'
         result = self.status(label, score, message)
         try:
             forecast = self.forecaster.add(observation, now)
@@ -122,7 +130,7 @@ class NetworkMonitor:
         return result
 
     def export_csv(self) -> str:
-        columns = ['observed_at', *FEATURES, 'interval_ms', 'total_bytes', 'route',
+        columns = ['observed_at', *FEATURES, 'interval_ms', 'total_bytes', 'route', 'strategy',
                    'phase', 'model_status', 'prediction', 'anomaly_score',
                    'forecast_status', 'forecast_mbps', 'forecast_mae_mbps', 'baseline_mae_mbps', 'network_trend']
         output = io.StringIO(newline='')

@@ -136,7 +136,7 @@ File sizes use binary MiB. Rates use decimal **MB/s** (1,000,000 bytes/second) o
 
 ## 5. Use AI Transfer Intelligence
 
-The existing AI Network Monitor runs two session-local scikit-learn models. It receives network metadata only and does not inspect files, change pacing or control approval.
+The existing AI Network Monitor runs two session-local scikit-learn models. It receives network metadata only and does not inspect files or control approval. Optional sending strategies are selected separately in Adaptive Transfer Lab.
 
 | Component | Learning requirement and output |
 | --- | --- |
@@ -149,7 +149,7 @@ The model statuses are independent: IsolationForest can be trained while the for
 ### Demonstrate real training
 
 1. Pair devices and keep both tabs foregrounded. Open Network diagnostics.
-2. Send representative files in either direction and approve the offers. Continue genuine transfer activity for roughly **70-90 seconds or longer**, with real observed variation.
+2. Use Baseline sending on the browser whose model you are training, send representative files and approve the offers. Receiving-only or bidirectional intervals have unknown remote policy and are excluded from training. Continue genuine transfer activity for roughly **70-90 seconds or longer**, with real observed variation.
 3. Keep each file below 64 MiB and clear saved receives before reaching 128 MiB retention. Fast transfers separated by idle time may never provide complete active windows; do not claim training in that case.
 4. Once trained, observe measured Mbps, predicted next-three-second Mbps, network trend, anomaly status and advisory text during continued transfer activity.
 5. Compare the model's displayed **validation MAE** with the **last-speed baseline MAE**. Lower MAE is better on this particular holdout; the model may be worse than the baseline. Neither value is an accuracy percentage or a promised speed improvement.
@@ -157,7 +157,9 @@ The model statuses are independent: IsolationForest can be trained while the for
 
 Anomaly scores are the negative IsolationForest decision function: positive means Anomaly; zero/negative means Normal. They are not attack probabilities. Changes in workload, CPU scheduling, hashing, congestion or idle behavior can all affect observations. Never claim an anomaly proves a cyberattack or guarantees an impending failure.
 
-The three-second forecast disappears when idle, RTT is missing, requests fail or no fresh result arrives within three seconds. An unavailable or failed AI component must not prevent normal file sharing. **Experimental Smart Transfer Mode is not implemented**; existing transmission behavior stays the baseline.
+The three-second forecast disappears when idle, RTT is missing, requests fail or no fresh result arrives within three seconds. An unavailable or failed AI component must not prevent normal file sharing. **Adaptive Transfer Lab** offers opt-in Rule-based and ML-assisted sending, while Baseline remains the default. Select a strategy before choosing files. The UI explains the current effective strategy and pacing target; ML assistance falls back when the forecast is stale, unavailable or has not beaten its holdout baseline. Short bounded pacing bursts preserve consent, backpressure, cancellation and verification.
+
+Expand **Compare real transfer outcomes** to download a comparison CSV or readable report. Use identical file sizes, alternate strategy order and repeat trials; a requested ML strategy may run as baseline. See [the adaptive experiment guide](ADAPTIVE_EXPERIMENTS.md). No improvement is guaranteed. Interrupted transfers still require an explicit restart; byte recovery is not implemented.
 
 ### Export and evaluate
 
@@ -166,7 +168,7 @@ The AI CSV contains bounded session observations and model results, without file
 For the existing **IsolationForest-only** chronological evaluation CLI, collect at least 40 rows:
 
 ```bash
-python -m aiml.evaluate /path/to/lanflux-network.csv --output network-predictions.csv
+python -m aiml.evaluate /path/to/lanflux-network.csv --baseline-only --output network-predictions.csv
 ```
 
 Windows PowerShell:

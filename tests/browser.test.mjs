@@ -224,7 +224,7 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:240000}, async t => 
     await t.test('AI monitor learns from real WebRTC observations, predicts and exports an evaluation CSV', async () => {
       await a.waitForFunction(() => document.getElementById('ai-model-status').textContent.startsWith('Trained'), null, {timeout:60000});
       await a.waitForFunction(() => ['Normal','Anomaly'].includes(document.getElementById('ai-prediction').textContent));
-      await a.waitForFunction(() => Number(document.getElementById('ai-sample-count').textContent.match(/· (\d+) retained/)?.[1]) >= 40, null, {timeout:30000});
+      await a.waitForFunction(() => Number(document.getElementById('ai-sample-count').textContent.match(/· (\d+) retained/)?.[1]) >= 50, null, {timeout:40000});
       assert.match(await a.locator('#ai-latency').innerText(),/ms/);
       assert.match(await a.locator('#ai-throughput').innerText(),/Mbps/);
       assert.match(await a.locator('#ai-forecast-status').innerText(),/Learning from network activity/);
@@ -235,7 +235,7 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:240000}, async t => 
       const csv = await readFile(await (await downloaded).path(),'utf8');
       assert.match(csv,/rtt_ms,throughput_mbps,active_transfer/);
       assert.match(csv,/evaluation,trained,(Normal|Anomaly)/);
-      assert.ok(csv.trim().split(/\r?\n/).length >= 41);
+      assert.ok(csv.trim().split(/\r?\n/).length >= 51);
       assert.ok(!csv.includes(await a.evaluate(() => window.lanfluxClient.roomId)));
       assert.ok(!csv.includes('sample.bin') && !csv.includes('candidate:'));
       await writeFile(resolve(output,'ai-observed.csv'),csv);
@@ -246,6 +246,80 @@ test('LANFLUX real browser sharing and lifecycle', {timeout:240000}, async t => 
       assert.equal(await a.locator('#ai-prediction').innerText(),'Unavailable');
       assert.match(await a.locator('#ai-model-status').innerText(),/Collecting training data/);
       assert.equal(await a.evaluate(() => window.lanfluxClient.connected),true);
+    });
+
+    await t.test('strategy controls preserve real verified transfers and export observed comparisons', async () => {
+      await a.locator('.comparison-details summary').click();
+      if (!(await a.locator('#comparison-clear').isDisabled())) await a.locator('#comparison-clear').click();
+      for (const strategy of ['baseline','rules','ml']) {
+        await a.locator('#transfer-strategy').selectOption(strategy);
+        const name = `strategy-${strategy}.bin`;
+        const bytes = Buffer.alloc(256*1024, strategy.length);
+        await a.locator('#file-input').setInputFiles({name,mimeType:'application/octet-stream',buffer:bytes});
+        await transfer(b,name).locator('[data-action="approve"]').waitFor();
+        assert.equal(await a.locator('#transfer-strategy').isDisabled(),true);
+        await transfer(b,name).locator('[data-action="approve"]').click();
+        await a.waitForFunction(name => [...window.lanfluxClient.transfers.values()].some(t=>t.name===name&&t.status==='completed'),name);
+        const download=b.waitForEvent('download');
+        await transfer(b,name).locator('[data-action="download"]').click();
+        assert.deepEqual(await readFile(await (await download).path()),bytes);
+        const state=await a.evaluate(name=>{const t=[...window.lanfluxClient.transfers.values()].find(t=>t.name===name);return {strategy:t.strategy,hash:t.hashStatus};},name);
+        assert.equal(state.strategy,strategy);assert.equal(state.hash,'verified');
+      }
+      assert.match(await a.locator('#comparison-count').innerText(),/3 finished/);
+      const csvDownload=a.waitForEvent('download');await a.locator('#comparison-csv').click();
+      const csv=await readFile(await (await csvDownload).path(),'utf8');
+      for(const strategy of ['baseline','rules','ml'])assert.ok(csv.includes(`"${strategy}"`));
+      assert.ok(csv.includes('"verified"'));assert.ok(!csv.includes('strategy-'));
+      await writeFile(resolve(output,'strategy-comparison.csv'),csv);
+      const reportDownload=a.waitForEvent('download');await a.locator('#comparison-report').click();
+      const report=await readFile(await (await reportDownload).path(),'utf8');
+      assert.match(report,/do not prove/);assert.match(report,/Terminal outgoing attempts: 3/);
+      await writeFile(resolve(output,'strategy-comparison.txt'),report);
+      await a.locator('section.ai-intelligence').nth(1).screenshot({path:resolve(output,'comparison-lab.png')});
+      await a.locator('#comparison-clear').click();
+      assert.match(await a.locator('#comparison-count').innerText(),/No finished/);
+      assert.equal(await a.locator('#comparison-csv').isDisabled(),true);
+      await a.locator('#transfer-strategy').selectOption('baseline');
+      assert.equal(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    });
+
+    await t.test('rules react to real delayed peer pongs and preserve verified transfer bytes', {timeout:40000}, async () => {
+      // Controlled browser scheduling perturbation, not a physical Wi-Fi benchmark.
+      await a.locator('#transfer-strategy').selectOption('rules');
+      await b.evaluate(() => {
+        const c=window.lanfluxClient;const original=c._control;c._labControl=original;c._labDelay=false;
+        c._control=function(message){if(message.type==='pong'&&c._labDelay){setTimeout(()=>original.call(c,message),250);return true;}return original.call(c,message);};
+      });
+      await a.evaluate(() => {
+        const c=window.lanfluxClient;c._labBuffer=c._waitForBuffer;c._labStart=performance.now();
+        c._waitForBuffer=async function(...args){await c._labBuffer.apply(c,args);if(!c._labFast && performance.now()-c._labStart<8000)await new Promise(r=>setTimeout(r,40));};
+        c.addFiles([new File([new Uint8Array(8*1024*1024).fill(73)],'rules-observed.bin')]);
+      });
+      try {
+        await transfer(b,'rules-observed.bin').locator('[data-action="approve"]').click();
+        await a.evaluate(()=>{const c=window.lanfluxClient;c._lastPingAt=null;return c._sampleMetrics();});
+        await a.waitForFunction(()=>window.lanfluxClient._pacer.minimumRtt!==null && window.lanfluxClient._pacer.minimumRtt<100);
+        await b.evaluate(()=>{window.lanfluxClient._labDelay=true;});
+        await a.evaluate(()=>{const c=window.lanfluxClient;c._lastPingAt=null;return c._sampleMetrics();});
+        await a.waitForFunction(()=>window.lanfluxClient._pacer.decision().effectiveMode==='rules');
+        await a.evaluate(()=>{window.lanfluxClient._labFast=true;});
+        await a.waitForFunction(()=>[...window.lanfluxClient.transfers.values()].some(t=>t.name==='rules-observed.bin'&&t.pacingDelayMs>0),null,{timeout:25000});
+        await a.waitForFunction(()=>[...window.lanfluxClient.transfers.values()].some(t=>t.name==='rules-observed.bin'&&t.status==='completed'),null,{timeout:25000});
+        const t=await a.evaluate(()=>{const t=[...window.lanfluxClient.transfers.values()].find(t=>t.name==='rules-observed.bin');return {status:t.status,hash:t.hashStatus,delay:t.pacingDelayMs,strategy:t.strategy};});
+        assert.equal(t.hash,'verified');assert.equal(t.strategy,'rules');assert.ok(t.delay>0);
+        const download=b.waitForEvent('download');await transfer(b,'rules-observed.bin').locator('[data-action="download"]').click();
+        assert.deepEqual(await readFile(await (await download).path()),Buffer.alloc(8*1024*1024,73));
+        const nav=a.locator('.workspace-nav');
+        await nav.evaluate(el=>{el.style.position='static';});
+        await a.evaluate(async()=>{await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));});
+        try {await a.locator('section.ai-intelligence').nth(1).screenshot({path:resolve(output,'adaptive-lab.png'),animations:'disabled'});}finally{await nav.evaluate(el=>el.style.removeProperty('position'));}
+
+      } finally {
+        await a.evaluate(()=>{const c=window.lanfluxClient;c._waitForBuffer=c._labBuffer;delete c._labBuffer;delete c._labStart;delete c._labFast;});
+        await b.evaluate(()=>{const c=window.lanfluxClient;c._control=c._labControl;delete c._labControl;delete c._labDelay;});
+        await a.locator('#transfer-strategy').selectOption('baseline');
+      }
     });
 
     await t.test('RandomForest learns from actual paced WebRTC bytes without injected telemetry', {timeout:130000}, async () => {

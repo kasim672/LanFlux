@@ -76,6 +76,7 @@ class ThroughputPredictor:
         self.accepted_labels = 0
         self.fitted_labels = 0
         self.last_fit = None
+        self.last_strategy = None
 
     def status(self, predicted=None, message=None):
         return {'status': 'trained' if self.model is not None else 'learning',
@@ -85,6 +86,11 @@ class ThroughputPredictor:
                 'message': message or 'Learning from network activity'}
 
     def add(self, sample, now):
+        strategy = sample.strategy
+        if self.last_strategy is not None and strategy != self.last_strategy:
+            self.window.clear()
+            self.pending.clear()
+        self.last_strategy = strategy
         interval = sample.interval_ms / 1000
         gap = None if self.last_at is None else now - self.last_at
         self.last_at = now
@@ -111,7 +117,7 @@ class ThroughputPredictor:
         usable = len(self.window) == WINDOW and all(s.active_transfer for _, s in self.window)
         if usable:
             features = rolling_features(self.window)
-            if features[1] > 0:
+            if features[1] > 0 and strategy == 'baseline':
                 self.pending.append({'features': features, 'start': self.window[0][0] - self.window[0][1].interval_ms / 1000,
                                      'origin': self.clock, 'duration': 0., 'area': 0., 'active': True})
         if (len(self.examples) >= MIN_LABELS and self.accepted_labels - self.fitted_labels >= 30
@@ -130,7 +136,11 @@ class ThroughputPredictor:
         predicted = float(self.model.predict([rolling_features(self.window)])[0])
         if not math.isfinite(predicted) or predicted < 0:
             return self.status(message='Forecast unavailable; normal file sharing continues.')
-        return self.status(predicted, 'Experimental forecast for the next three seconds of active transfer.')
+        result = self.status(predicted, 'Experimental forecast for the next three seconds of active transfer.'
+                             if strategy == 'baseline' else
+                             'Intervention-conditioned forecast: pacing changes achieved throughput; this is not network capacity.')
+        result['intervention_conditioned'] = strategy != 'baseline'
+        return result
 
 
 def advise(forecast, anomaly, current):

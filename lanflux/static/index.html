@@ -124,6 +124,26 @@
             <p id="ai-advice" class="field-description" aria-live="polite">Keep collecting active-transfer observations before relying on predictive advice.</p>
             <p class="measurement-note">RandomForest predicts approximate payload throughput if transfer activity continues. Recommendations use advisory rules, not another trained model. Forecasts do not guarantee speed or detect attacks.</p>
           </section>
+          <section class="ai-intelligence" aria-labelledby="adaptive-title">
+            <div class="panel-top"><div><p class="section-kicker">Explainable application pacing</p><h3 id="adaptive-title">Adaptive Transfer Lab</h3></div><span class="state-label">Experimental · default off</span></div>
+            <label for="transfer-strategy">Sending strategy</label>
+            <select id="transfer-strategy" aria-describedby="strategy-help">
+              <option value="baseline">Baseline — original sending</option>
+              <option value="rules">Rule-based — measured latency</option>
+              <option value="ml">ML-assisted — forecast + measured latency</option>
+            </select>
+            <p id="strategy-help" class="field-description">Choose before selecting files. The strategy is locked while an outgoing file is pending. Only this browser’s sending is affected.</p>
+            <dl class="session-metrics ai-metrics"><div><dt>Effective strategy now</dt><dd id="strategy-effective">Baseline</dd></div><div><dt>Requested pacing rate · Mbps</dt><dd id="strategy-target">Unavailable</dd></div></dl>
+            <p id="strategy-reason" class="field-description" role="status">Original WebRTC sending and backpressure.</p>
+            <p class="measurement-note">Pacing can reduce speed. WebRTC still controls transport congestion. ML assistance requires a recent forecast that beats its chronological holdout baseline; otherwise original sending continues. No performance improvement is assumed.</p>
+            <details class="comparison-details"><summary>Compare real transfer outcomes</summary>
+              <p class="field-description">Compare equal-size files on the same route, alternate strategy order, and repeat each run. Export before closing this tab. Reports omit filenames, file contents, checksums and private addresses.</p>
+              <p id="comparison-count" class="small muted">No finished outgoing runs yet.</p>
+              <div id="comparison-summary" class="comparison-summary" aria-live="polite"></div>
+              <div class="ai-actions"><button id="comparison-csv" class="button secondary" type="button" disabled>Download comparison CSV ↓</button><button id="comparison-report" class="button secondary" type="button" disabled>Download readable report ↓</button><button id="comparison-clear" class="button quiet" type="button" disabled>Clear finished runs</button></div>
+              <p class="measurement-note">These are observations, not a controlled benchmark. Cached RTT values are counted once per ping; runs with too few pings show Unavailable. Compare verified completions separately from failed and cancelled runs.</p>
+            </details>
+          </section>
           <div class="ai-actions"><button id="ai-export" class="button secondary" type="button" disabled>Export real samples CSV ↓</button><button id="ai-reset" class="button quiet" type="button" disabled>Reset learning baseline</button></div>
           <p class="measurement-note">IsolationForest learns from at least 30 real observations, then evaluates new samples. Positive scores indicate anomalies; scores are not probabilities. Experimental results can reflect workload changes and do not prove an attack.</p>
           <p class="measurement-note ai-data-note">Only network metadata reaches Python, never files. Export before resetting: reset clears the baseline and sample history.</p>

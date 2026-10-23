@@ -113,7 +113,7 @@ Open **Network diagnostics → AI Network Monitor** after pairing. LANFLUX colle
 | RandomForestRegressor | 60 genuinely labeled active-transfer windows, sufficient variation and disjoint chronological train/validation data | Approximate throughput over the next three seconds, model MAE and last-speed baseline MAE |
 | Transfer advisor | Fresh forecast and observed anomaly state | Improving/stable/degrading trend and clearly identified advisory rules |
 
-The forecast uses five past observations. Its target comes only from subsequent measured intervals. Idle periods, missing measurements and irregular sampling do not create training successes. **Learning from network activity** is expected until enough eligible data exists. Predictions are experimental, may be worse than the simple baseline and never alter the transfer engine.
+The forecast uses five past observations. Its target comes only from subsequent measured intervals. Idle periods, missing measurements and irregular sampling do not create training successes. **Learning from network activity** is expected until enough eligible data exists. Predictions are experimental, may be worse than the simple baseline and affect sending only when the user explicitly selects an experimental strategy with eligible evidence.
 
 ### Demonstrate it
 
@@ -123,10 +123,22 @@ The forecast uses five past observations. Its target comes only from subsequent 
 4. Choose **Export real samples CSV** before disconnecting or resetting. Evaluate the anomaly detector's chronological holdout with:
 
 ```bash
-python -m aiml.evaluate /path/to/lanflux-network.csv --output network-predictions.csv
+python -m aiml.evaluate /path/to/lanflux-network.csv --baseline-only --output network-predictions.csv
 ```
 
 The CLI evaluates IsolationForest only; RandomForest validation is calculated live and included in CSV columns. Neither path fabricates data. Reset, peer replacement and disconnect clear session-local models. A positive anomaly score denotes unusual observations, not proof of an attack. No performance improvement or labeled anomaly accuracy is claimed.
+
+### Adaptive Transfer Lab
+
+Choose **Baseline**, **Rule-based**, or **ML-assisted** sending in Network Diagnostics. Baseline remains the default. The optional strategies use bounded application pacing, show the reason for each decision, and restore baseline behavior when evidence is unavailable. ML assistance requires a fresh forecast that beats its simple chronological holdout baseline. Approval, chunk limits, backpressure and SHA-256 verification apply to every strategy.
+
+Expand **Compare real transfer outcomes** to download CSV and readable comparisons grouped by file size, route, requested/effective strategy and traffic condition. Verified completions, failures and cancellations stay visible. Paced and unknown-policy observations are excluded from model training to avoid learning the controller's own limits.
+
+**Research question:** Does short-horizon throughput prediction improve the throughput-latency trade-off compared with ordinary sending and simple rules? The [experiment guide](docs/ADAPTIVE_EXPERIMENTS.md) explains how to test this; the [competition brief](docs/COMPETITION_BRIEF.md) covers the contribution, demo and remaining milestones. No benchmark benefit or worldwide novelty is assumed.
+
+![Actual Adaptive Transfer Lab running on measured browser telemetry](docs/screenshots/adaptive-lab.png)
+
+This capture uses a controlled real DataChannel workload with delayed peer pong responses to exercise the rule-based controller. It shows an observed verified outcome and recorded pacing wait, not a campus Wi-Fi benchmark or a proof of improved performance.
 
 See the [complete AI methodology and demonstration](docs/AI_MONITOR.md), [reproducible network experiments](docs/NETWORK_EXPERIMENTS.md) and [detailed PDF report](docs/LANFLUX_Technical_Report.pdf). The screenshot shows a real controlled loopback transfer with test-only pacing, not a general Wi-Fi benchmark.
 
@@ -297,7 +309,7 @@ Room links are private bearer capabilities. LANFLUX uses unpredictable room IDs,
 
 ## Testing and evaluation
 
-Current local verification: **195 Python tests**, **51 JavaScript unit tests**, and **16 Chromium scenarios plus their parent test**. Separate integration suites also pass **four actual coturn cases** and **three authenticated reverse-proxy cases**, each with its parent test. Scenarios exercise actual downloaded bytes, QR/link joining, approval, queues, rejection, cancellation, corruption, interruption, SHA-256, responsive layouts, diagnostics and real-observation AI learning/export/reset.
+Current local verification: **203 Python tests**, **70 JavaScript unit tests**, and **18 Chromium scenarios plus their parent test**. The 21 October infrastructure run passed **four actual coturn cases** and **three authenticated reverse-proxy cases**, each with its parent test. These optional suites were skipped in the latest local run because their binaries are unavailable; CI requires them. Scenarios exercise actual downloaded bytes, QR/link joining, approval, queues, rejection, cancellation, corruption, interruption, SHA-256, responsive layouts, diagnostics and real-observation AI learning/export/reset.
 
 ```bash
 python -m pip install -r requirements-dev.txt

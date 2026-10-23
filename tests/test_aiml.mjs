@@ -64,3 +64,24 @@ test('Forecast presentation uses server values and clears idle, stale or invalid
   assert.match(fields.get('ai-forecast-status'),/Learning from network activity/);
   assert.equal(fields.get('ai-forecast-mae'),'Unavailable');
 });
+
+
+test('Sampling provenance excludes receive bytes earlier in an interval and policy switches', () => {
+  const sampler=new TelemetrySampler();
+  const m=(bytes,received,epoch=0)=>({...measurement(bytes),receivedPayloadBytes:received,strategyEpoch:epoch});
+  sampler.sample(m(0,0),true,true,0);
+  sampler.sample(m(100,100),true,true,1000);
+  assert.equal(sampler.receivedInInterval,true);
+  sampler.sample(m(200,100),true,true,2000);
+  assert.equal(sampler.receivedInInterval,false);
+  sampler.sample(m(300,100,2),true,true,3000);
+  assert.equal(sampler.policyChanged,true);
+});
+
+test('Intervention-conditioned forecasts are visibly qualified', () => {
+  const fields=new Map();
+  const view={activeTransfer:true,forecastAt:null,write:(id,text)=>fields.set(id,text)};
+  view.clearForecast=()=>AINetworkMonitor.prototype.clearForecast.call(view);
+  AINetworkMonitor.prototype.renderForecast.call(view,{status:'trained',intervention_conditioned:true,predicted_mbps:3,validation:{}},{},performance.now());
+  assert.match(fields.get('ai-forecast-status'),/not network capacity/);
+});

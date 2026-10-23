@@ -40,7 +40,7 @@ Choose **Export real samples CSV** while connected. The download includes UTC se
 Collect at least 40 rows, then evaluate locally:
 
 ```bash
-python -m aiml.evaluate /path/to/lanflux-network.csv --output network-predictions.csv
+python -m aiml.evaluate /path/to/lanflux-network.csv --baseline-only --output network-predictions.csv
 ```
 
 On Windows PowerShell:
@@ -89,7 +89,27 @@ The forest uses 48 trees, depth at most six, minimum leaf size three and one wor
 3. Wait for the separate RandomForest status to become trained. During continued transfers, observe measured/predicted Mbps, trend, model MAE and baseline MAE. Predictions may be worse than the baseline; report that result honestly.
 4. Export the real CSV before resetting/disconnecting. No synthetic test fixtures are used in live training. Fast or short sessions may legitimately remain “Learning from network activity”.
 
-Experimental Smart Transfer Mode is deliberately not implemented: no pacing, chunk sizes, negotiated limits, backpressure or wire protocol are changed. A controlled performance comparison is needed before letting uncertain forecasts influence transmission.
+## Adaptive Transfer Lab
+
+The monitor includes three sender strategies, selectable before outgoing files are queued. **Baseline** is the original sender and remains the default on every page load. **Rule-based** may pace when peer RTT exceeds both 1.5 times the strategy session minimum and that minimum plus 5 ms. **ML-assisted** additionally requires a trained, finite, independently fresh forecast whose purged chronological validation MAE is strictly lower than the last-speed baseline MAE. Stale or missing evidence restores original sending.
+
+These are transparent application policies, not additional trained models or a replacement for WebRTC congestion control. Rule-based pacing targets 90% of the burst-start observed throughput. ML pacing targets a forecast-informed rate bounded to 80-95% of that anchor. The anchor stays fixed for a burst so the controller cannot repeatedly multiply its own reduced observations downward. An intervention lasts at most three seconds, then requires five seconds of unpaced recovery. A requested per-chunk wait is capped at 20 ms; actual browser timer scheduling can exceed that time. These targets are requested pacing rates, not guaranteed achieved rates or link-capacity estimates.
+
+File protocol v2, frame limits, backpressure, approval, verification and cancellation are preserved. Delays recheck transfer state and channel identity before sending. No pause, automatic cancellation, byte dropping or chunk-size expansion is introduced. ML and API failures cannot prevent ordinary sharing. The selected strategy is locked while an outgoing transfer is pending, and every new page starts in baseline mode.
+
+### Policy-aware learning
+
+Metadata adds a categorical `strategy`: `baseline`, `rules`, `ml`, or `unknown`. Only eligible baseline observations train IsolationForest or create supervised forecast examples. A policy transition clears pending feature/label windows. Incoming-byte deltas and strategy-change generations exclude mixed intervals, including incoming bytes that arrived before a local outgoing file began. Receiving-only and bidirectional measurements are `unknown` because the current file protocol does not disclose the remote sender's policy.
+
+A trained model can infer from paced or unknown-policy windows, but the UI labels these forecasts as intervention-conditioned. They predict achieved workload throughput, not unpaced network capacity. Those intervals never become training labels. Selecting a strategy does not fabricate training data. If the model has not beaten its holdout baseline, ML mode honestly continues baseline sending.
+
+The existing telemetry CSV preserves `strategy`. The offline anomaly evaluator accepts older CSV files without that column as baseline for compatibility; that is an explicit provenance assumption. By default it rejects paced/unknown observations in its training segment. Use `--baseline-only` to explicitly exclude those rows from both fitting and evaluation; the report states the excluded count. No rows are relabeled or invented. Runtime source measurements are client reports, not independently attested observations.
+
+### Comparison and demonstration
+
+Open **Network Diagnostics → AI Network Monitor → Adaptive Transfer Lab**. Collect varied active **outgoing** baseline observations first. Then compare equal-size files with each strategy, alternating order and recording all attempts. The monitor shows the current effective decision, requested pacing rate and its explanation. Expand **Compare real transfer outcomes** to export the CSV or readable report. Reports omit names, digests, file content and private addresses and remain in browser memory until downloaded.
+
+The [experiment guide](ADAPTIVE_EXPERIMENTS.md) defines grouping, units, RTT sample requirements and repeated-trial methodology. The [competition brief](COMPETITION_BRIEF.md) gives a defensible research question and demonstration. Neither the app nor its tests establish an improvement in Wi-Fi performance. Interrupted byte recovery remains a separate protocol project, described in the brief.
 
 ## Implementation and test map
 
@@ -101,6 +121,8 @@ Experimental Smart Transfer Mode is deliberately not implemented: no pacing, chu
 | `lanflux/static/aiml.js` | Actual browser sampling, authenticated requests, fresh/unavailable presentation and CSV/reset controls |
 | `tests/test_predictor.py` | Synthetic correctness fixtures for leakage, alignment, timing gaps, eligibility, fitting, evaluation, advisor and failure fallback |
 | `tests/test_aiml.py`, `tests/test_aiml.mjs` | API authorization, strict metadata, sampler calculations and forecast freshness |
+| `lanflux/static/adaptive.js`, `tests/test_adaptive.mjs` | Bounded policy decisions, stale evidence, safe fallback, cancellation and message-limit regressions |
+| `lanflux/static/comparison.js`, `tests/test_comparison.mjs` | Local strategy outcomes, privacy-safe export, distinct-ping percentiles, grouping and retention |
 | `tests/browser.test.mjs` | Actual browser observations, approved verified transfers, model training and displayed predictions |
 
 Run `python -m pytest -q tests/test_predictor.py tests/test_aiml.py`, `npm run test:unit` and `npm run test:e2e`. Full executed results and limits are recorded in [verification](VERIFICATION.md). Synthetic unit-test fixtures never seed a live session.

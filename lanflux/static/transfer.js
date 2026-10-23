@@ -1,4 +1,5 @@
 /* LANFLUX: signaling carries connection messages only; file metadata and bytes use encrypted WebRTC. */
+import {AdaptivePacer} from './adaptive.js';
 import {sha256} from './vendor/noble-hashes/sha2.js';
 import {PayloadMetrics, selectedPair, pairRoute, equalDigest} from './metrics.js';
 import {validateIceServers, iceCapabilities, withoutTurnCredentials, applyPeerIce, peerConnectionConfig, networkState, connectionFailureHelp, CandidateErrors} from './ice.js';
@@ -63,6 +64,7 @@ export class LanfluxClient {
     this._timers = null;
     this._route = 'unknown';
     this._metrics = new PayloadMetrics();
+    this._receivedPayloadBytes = 0;
     this._metricsTimer = null;
     this._rttMs = null;
     this._pendingPing = null;
@@ -77,6 +79,9 @@ export class LanfluxClient {
     this._historyWarned = false;
     this._connectionPhase = 'idle';
     this._iceErrors = new CandidateErrors();
+    this._pacer = new AdaptivePacer();
+    this.strategyEpoch = 0;
+    this._rttSampleAt = null;
   }
 
   _emit(event) { this.onEvent(event); }
@@ -89,10 +94,10 @@ export class LanfluxClient {
   _update(transfer) {
     const {id, name, size, direction, status, bytes, speed, error, url, hashStatus, sha256: expectedSha256, actualSha256,
       currentSpeed, averageSpeed, durationSeconds, etaSeconds, peakBytesPerSecond, startedAt, finishedAt,
-      connectionSetupMs, route, resultReason, hashSeconds} = transfer;
+      connectionSetupMs, route, resultReason, hashSeconds, strategy, effectiveStrategy, pacingDelayMs, pacingAdjustments} = transfer;
     this._emit({type: 'transfer', transfer: {id, name, size, direction, status, bytes, speed, error, url,
       hashStatus, sha256: expectedSha256, actualSha256, currentSpeed, averageSpeed, durationSeconds,
-      etaSeconds, peakBytesPerSecond, startedAt, finishedAt, connectionSetupMs, route, resultReason, hashSeconds}});
+      etaSeconds, peakBytesPerSecond, startedAt, finishedAt, connectionSetupMs, route, resultReason, hashSeconds, strategy, effectiveStrategy, pacingDelayMs, pacingAdjustments, payloadActive: Boolean(transfer._meterActive)}});
   }
   _memory() { this._emit({type: 'memory', used: this._memoryUsed, limit: this.config?.max_memory_bytes || 0}); }
 
@@ -131,6 +136,7 @@ export class LanfluxClient {
     const session = ++this._session;
     this.roomId = roomId;
     this._metrics = new PayloadMetrics();
+    this._receivedPayloadBytes = 0;
     this._iceErrors = new CandidateErrors();
     this._signalChain = Promise.resolve();
     this._receiveChain = Promise.resolve();
@@ -404,7 +410,8 @@ export class LanfluxClient {
     return {bytes: 0, speed: 0, hashStatus: 'pending', sha256: null, actualSha256: null,
       currentSpeed: null, averageSpeed: null, durationSeconds: null, etaSeconds: null,
       peakBytesPerSecond: null, startedAt: null, finishedAt: null, connectionSetupMs: this._setupMs,
-      route: this._route, resultReason: null, hashSeconds: null, _activity: Date.now(), ...fields};
+      route: this._route, resultReason: null, hashSeconds: null, strategy: fields.direction === 'send' ? this._pacer.mode : 'unknown',
+      effectiveStrategy: 'baseline', pacingDelayMs: 0, pacingAdjustments: 0, _activity: Date.now(), ...fields};
   }
 
   _createHash() { return sha256.create(); }
@@ -458,7 +465,8 @@ export class LanfluxClient {
       if (!validId(message.nonce) || Object.keys(message).length !== 2) throw new Error('Invalid diagnostic ping');
       if (message.type === 'ping') this._control({type: 'pong', nonce: message.nonce});
       else if (this._pendingPing?.nonce === message.nonce) {
-        this._rttMs = Math.max(0, performance.now() - this._pendingPing.started);
+        this._rttSampleAt = performance.now();
+        this._rttMs = Math.max(0, this._rttSampleAt - this._pendingPing.started);
         this._pendingPing = null;
       }
       return;
@@ -554,6 +562,7 @@ export class LanfluxClient {
   _startTransfer(transfer) {
     const now = performance.now();
     transfer._started = now;
+    if (transfer.direction === 'send') { transfer.strategy = this._pacer.mode; this._pacer.nextAt = 0; }
     transfer.startedAt = Date.now();
     transfer._metrics = new PayloadMetrics(now);
     transfer._metrics.start(now);
@@ -637,6 +646,21 @@ export class LanfluxClient {
     let offset = 0;
     while (offset < transfer.size) {
       if (transfer.status !== 'transferring' || channel !== this.channel || channel.readyState !== 'open') return;
+      // No wire fields change; pacing never replaces DataChannel backpressure.
+      if (this._pacer.mode !== 'baseline') {
+        let delay = 0;
+        try { delay = this._pacer.delay(Math.min(chunkSize, transfer.size - offset)); }
+        catch { this._pacer.reset(); }
+        if (delay > 0) {
+          transfer.effectiveStrategy = this._pacer.mode;
+          const waitStarted = performance.now();
+          await new Promise(resolve => setTimeout(resolve, delay));
+          if (transfer.status !== 'transferring' || channel !== this.channel || channel.readyState !== 'open') return;
+          transfer.pacingDelayMs += Math.max(0, performance.now() - waitStarted);
+          transfer.pacingAdjustments++;
+        }
+        if (transfer.status !== 'transferring' || channel !== this.channel || channel.readyState !== 'open') return;
+      }
       await this._waitForBuffer(channel, transfer);
       if (transfer.status !== 'transferring' || channel !== this.channel) return;
       const chunk = await transfer._file.slice(offset, offset + chunkSize).arrayBuffer();
@@ -712,6 +736,7 @@ export class LanfluxClient {
     transfer.bytes += length;
     transfer._metrics.add(length);
     this._metrics.add(length);
+    this._receivedPayloadBytes += length;
     transfer._activity = Date.now();
     this._progress(transfer);
   }
@@ -790,6 +815,22 @@ export class LanfluxClient {
     this._historyWarned = false;
     this._emit({type: 'cleared'});
   }
+
+  get transferStrategy() { return this._pacer.mode; }
+
+  setTransferStrategy(mode) {
+    if (this._activeSend) return false;
+    const changed = this._pacer.setMode(mode);
+    if (changed) this.strategyEpoch++;
+    return changed;
+  }
+
+  updateTransferIntelligence(observation) {
+    try { this._pacer.update(observation); }
+    catch { this._pacer.reset(); }
+  }
+
+  clearTransferIntelligence() { this._pacer.reset(); }
 
   setRelayOnly(enabled) {
     if (!enabled && this.config?.ice_transport_policy === 'relay') {
@@ -903,6 +944,8 @@ export class LanfluxClient {
 
   _emitDiagnostics(now = performance.now(), measured = this._metrics.snapshot(now)) {
     this._emit({type: 'diagnostics', diagnostics: {
+        receivedPayloadBytes:this._receivedPayloadBytes, strategyEpoch:this.strategyEpoch,
+        adaptive: this._pacer.decision(now), rttSampleAt: this._rttSampleAt,
         signalingState: this.socket?.readyState === 1 ? 'open' : 'closed',
         iceState: this.pc?.iceConnectionState ?? 'unavailable',
         dataChannelState: this.channel?.readyState ?? 'unavailable',
@@ -939,6 +982,8 @@ export class LanfluxClient {
   }
 
   _closePeer(message) {
+    this._pacer.reset();
+    this._rttSampleAt = null;
     this.connected = false;
     this._connectDeadline = null;
     ++this._peerSession;

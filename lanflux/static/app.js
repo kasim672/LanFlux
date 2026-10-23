@@ -2,6 +2,8 @@ import { LanfluxClient } from './transfer.js';
 import { DiagnosticsView, formatBinaryBytes as formatBytes, formatRate, formatSeconds, formatMilliseconds, routeLabel } from './diagnostics.js';
 import { invitedRoom } from './invitation.js';
 import { AINetworkMonitor } from './aiml.js';
+import { StrategyComparison } from './comparison.js';
+import { downloadText, releaseExportDownloads } from './experiments.js';
 import { iceCapabilities, networkState, networkStateLabel } from './ice.js';
 
 const $ = (id) => document.getElementById(id);
@@ -19,6 +21,7 @@ let toastTimer;
 let confirmationAction = null;
 const diagnostics = new DiagnosticsView();
 const aiMonitor = new AINetworkMonitor();
+const comparison = new StrategyComparison();
 
 function preferences() {
   try { return JSON.parse(localStorage.getItem('lanflux.preferences') || '{}'); }
@@ -272,13 +275,13 @@ const client = new LanfluxClient({ onEvent(event) {
     case 'status': setStatus(event); break;
     case 'room': setRoom(event); aiMonitor.join(event); break;
     case 'peer': $('peer-name').textContent = event.name || (event.connected ? 'Other browser' : 'Not connected'); break;
-    case 'transfer': renderTransfer(event.transfer); break;
+    case 'transfer': comparison.observeTransfer(event.transfer); renderTransfer(event.transfer); refreshStrategy(); if (terminalStates.has(event.transfer.status)) renderComparison(); break;
     case 'route': setRoute(event.route); break;
     case 'error': showError(event.message); break;
     case 'config': config = event.config; updateLimits(); break;
     case 'memory': $('memory-status').textContent = `${formatBytes(event.used)} / ${formatBytes(event.limit)} browser memory`; break;
     case 'cleared': clearFinishedViews(); break;
-    case 'diagnostics': diagnostics.update(event.diagnostics); aiMonitor.observe(event.diagnostics,client); break;
+    case 'diagnostics': diagnostics.update(event.diagnostics); comparison.observeDiagnostics(event.diagnostics); aiMonitor.observe(event.diagnostics,client); refreshStrategy(event.diagnostics.adaptive); break;
     case 'left':
       aiMonitor.leave();
       currentRoom = null;
@@ -298,6 +301,43 @@ const client = new LanfluxClient({ onEvent(event) {
 } });
 // Exposes the real engine for development and end-to-end verification.
 window.lanfluxClient = client;
+
+const strategyNames = {baseline:'Baseline',rules:'Rule-based',ml:'ML-assisted',mixed:'Mixed',unknown:'Unavailable'};
+function refreshStrategy(decision) {
+  $('transfer-strategy').disabled = [...client.transfers.values()].some(t => t.direction === 'send' && !terminalStates.has(t.status));
+  if (decision) {
+    $('strategy-effective').textContent = strategyNames[decision.effectiveMode] || 'Unavailable';
+    $('strategy-target').textContent = Number.isFinite(decision.targetMbps) ? decision.targetMbps.toFixed(2) : 'Unavailable';
+    $('strategy-reason').textContent = decision.reason || 'Original sending continues.';
+  }
+}
+function renderComparison() {
+  const {count,groups} = comparison.snapshot();
+  $('comparison-count').textContent = count ? `${count} finished outgoing runs · latest 100 retained in this tab` : 'No finished outgoing runs yet.';
+  for (const id of ['comparison-csv','comparison-report','comparison-clear']) $(id).disabled = !count;
+  const fragment = document.createDocumentFragment();
+  for (const group of groups) {
+    const row = document.createElement('p');
+    const speed = Number.isFinite(group.meanThroughputMbps) ? `${group.meanThroughputMbps.toFixed(2)} Mbps` : 'Unavailable';
+    row.textContent = `${strategyNames[group.strategy]} → ${strategyNames[group.effectiveStrategy]} · ${formatBytes(group.fileSizeBytes)} · ${group.route} · ${group.condition}: ${group.completed}/${group.runs} verified completions; mean completed speed ${speed}; ${group.failed} failed, ${group.cancelled} cancelled, ${group.rejected} rejected; ${group.totalPacingDelayMs.toFixed(1)} ms observed pacing wait.`;
+    fragment.append(row);
+  }
+  $('comparison-summary').replaceChildren(fragment);
+}
+$('transfer-strategy').addEventListener('change', () => {
+  if (!client.setTransferStrategy($('transfer-strategy').value)) {
+    $('transfer-strategy').value = client.transferStrategy;
+    toast('Wait until outgoing transfers finish before changing strategy.');
+  }
+  aiMonitor.clearForecast();
+  $('strategy-effective').textContent = 'Baseline';
+  $('strategy-target').textContent = 'Unavailable';
+  $('strategy-reason').textContent = 'Waiting for fresh observations under the selected strategy.';
+  refreshStrategy();
+});
+$('comparison-csv').addEventListener('click', () => downloadText(comparison.csv(),'lanflux-strategy-comparison.csv','text/csv'));
+$('comparison-report').addEventListener('click', () => downloadText(comparison.report(),'lanflux-strategy-comparison.txt'));
+$('comparison-clear').addEventListener('click', () => { comparison.clearFinished(); renderComparison(); });
 
 async function roomAction(action) {
   if (busy) return;
@@ -461,6 +501,7 @@ window.addEventListener('pagehide', () => {
   $('toast').hidden = true;
   confirmationAction = null;
   document.querySelectorAll('dialog[open]').forEach((dialog) => dialog.close());
+  releaseExportDownloads();
   diagnostics.close();
   aiMonitor.close();
   client.leave();

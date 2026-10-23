@@ -34,6 +34,8 @@ CHAPTERS = [
     ('CONFIGURATION.md', 'Configuration reference'),
     ('DEPLOYMENT.md', 'HTTPS, TURN and public deployment'),
     ('NETWORK_EXPERIMENTS.md', 'Reproducible network experiments'),
+    ('ADAPTIVE_EXPERIMENTS.md', 'Adaptive sending experiments'),
+    ('COMPETITION_BRIEF.md', 'Research contribution and demonstration'),
     ('VERIFICATION.md', 'Verification evidence and limitations'),
     ('FONT_NOTICES.md', 'PDF font copyright and permission notice'),
 ]

@@ -17,7 +17,7 @@ This report explains the implementation, reproducible operation, security model 
 | Network visibility | Observed payload counters, monotonic timing, ping/pong RTT, bounded speed history and failure states |
 | Unsupervised ML | Session-specific IsolationForest, real baseline collection, later signed anomaly scores |
 | Supervised ML | Past-only RandomForest three-second throughput forecast, actual future labels and purged chronological validation |
-| Interpretation | Explicit advisory rules combining fresh forecasts and anomaly observations; no automatic transfer control |
+| Interpretation | Explicit advisory rules combining fresh forecasts and anomaly observations; optional bounded, explainable application pacing with baseline fallback |
 | Deployment | Local loopback default; explicit LAN mode; documented HTTPS/WSS reverse proxy and external coturn configuration |
 
 ## Real interface evidence
@@ -28,13 +28,23 @@ The homepage and sharing screenshots were refreshed on 22 October 2026 in real C
 
 ![Actual AI panel with measured throughput, RTT and trained models](screenshots/ai-intelligence.png)
 
-The AI panel shows an actual controlled loopback WebRTC transfer with test-only sender pacing. Displayed values were produced by observations and fitted models. They demonstrate the implemented pipeline; they are not representative Wi-Fi performance, labeled anomaly accuracy or proof that RandomForest improves network speed. Test-only pacing is absent from normal application operation.
+The AI panel shows an actual controlled loopback WebRTC transfer with test-only sender pacing. Displayed values were produced by observations and fitted models. They demonstrate the implemented pipeline; they are not representative Wi-Fi performance, labeled anomaly accuracy or proof that RandomForest improves network speed. The controlled workload pacing is test-only; the separately implemented Adaptive Transfer Lab is optional and defaults to baseline.
 
 ![Actual successful received file with verified SHA-256](screenshots/verified-transfer.png)
 
 ![Actual narrow mobile viewport of the working interface](screenshots/mobile.png)
 
 The successful transfer image reflects real received and verified bytes. The mobile view is emulated Chromium; it does not establish current physical-phone or Safari compatibility.
+
+## Adaptive networking contribution
+
+The current extension adds explainable application pacing and a local comparison of three strategies. Only baseline observations train the models; paced and unknown-policy windows are excluded. The selected strategy, effective intervention, actual delay and verified outcome are recorded separately. Short bounded interventions and recovery intervals address controller feedback without replacing WebRTC congestion control.
+
+Read [the adaptive experiment methodology](ADAPTIVE_EXPERIMENTS.md) and [the competition brief](COMPETITION_BRIEF.md) for the hypothesis, repeated trials, interpretation and secure recovery prerequisites. The brief distinguishes shipped capabilities from future work. Funding success, universal novelty and faster transfers are not claimed.
+
+![Actual adaptive controller with observed policy decision](screenshots/adaptive-lab.png)
+
+The adaptive capture is a controlled browser workload with delayed actual pong replies. It records measured latency and optional pacing while preserving verified file bytes. It is not a real-world performance improvement claim.
 
 ## How to read this report
 
@@ -51,7 +61,7 @@ The current implementation deliberately keeps a bounded in-memory MVP. Future im
 - More physical mobile devices and Safari/Firefox regression coverage.
 - Longer, independently collected network sessions and labeled anomaly evaluation.
 - A truly separate out-of-session test set for throughput forecasting and comparison against stronger baselines.
-- Optional pacing experiments only after measured evidence and safe transfer-engine boundaries; Smart Mode is absent today.
+- Physical-network comparison of the implemented baseline, rule-based and ML-assisted pacing strategies; no general benefit is established yet.
 - Shared room/session infrastructure before any multi-worker or multi-instance scaling.
 - Operational relay-secret rotation, public access controls and approved campus deployment validation.
 

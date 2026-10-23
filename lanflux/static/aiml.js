@@ -10,13 +10,16 @@ export class TelemetrySampler {
     }
     const previous = this.previous;
     if (!previous || now - previous.time > 10000 || measurement.totalBytes < previous.bytes) {
-      this.previous = {time:now, bytes:measurement.totalBytes}; return null;
+      this.previous = {time:now, bytes:measurement.totalBytes, received:measurement.receivedPayloadBytes, epoch:measurement.strategyEpoch}; return null;
     }
     const elapsed = now - previous.time;
     if (elapsed < 900) return null;
-    this.previous = {time:now, bytes:measurement.totalBytes};
+    this.previous = {time:now, bytes:measurement.totalBytes, received:measurement.receivedPayloadBytes, epoch:measurement.strategyEpoch};
     if (!Number.isFinite(measurement.rttMs) || measurement.rttMs < 0 || measurement.rttMs > 60000) return null;
     const delta = measurement.totalBytes - previous.bytes;
+    this.receivedInInterval = !Number.isSafeInteger(measurement.receivedPayloadBytes) ||
+      !Number.isSafeInteger(previous.received) || measurement.receivedPayloadBytes !== previous.received;
+    this.policyChanged = previous.epoch !== measurement.strategyEpoch;
     return {
       rtt_ms:measurement.rttMs, throughput_mbps:delta * 8 / elapsed / 1000,
       interval_ms:elapsed, total_bytes:measurement.totalBytes,
@@ -37,6 +40,9 @@ export class AINetworkMonitor {
     this.samples = 0;
     this.forecastAt = null;
     this.activeTransfer = false;
+    this.latestForecast = null;
+    this.latestMeasurement = null;
+    this.client = null;
     this.downloads = new Map();
     this.resetHandler = () => this.resetBaseline();
     this.exportHandler = () => this.exportCsv();
@@ -61,6 +67,8 @@ export class AINetworkMonitor {
     this.controller = null;
     this.pending = false;
     this.connected = false;
+    this.latestMeasurement = null;
+    this.client?.clearTransferIntelligence?.();
     this.sampler.reset();
     this.samples = 0;
     this.write('ai-model-status','Collecting training data');
@@ -94,6 +102,13 @@ export class AINetworkMonitor {
     this.write('ai-latency',formatMilliseconds(measurement.rttMs));
     const active = Array.from(client.transfers.values()).some(transfer => transfer.status === 'transferring');
     this.activeTransfer = active;
+    this.client = client;
+    const sending = Array.from(client.transfers.values()).some(t => t.direction === 'send' && t.status === 'transferring');
+    const receiving = Array.from(client.transfers.values()).some(t => t.direction === 'receive' && t.status === 'transferring');
+    this.latestMeasurement = {throughputMbps:measurement.currentBytesPerSecond * 8 / 1e6,
+      rttMs:measurement.rttMs, measuredAt:now, active:sending && !receiving};
+    if (!Number.isFinite(measurement.currentBytesPerSecond)) this.latestMeasurement.throughputMbps = null;
+    this.updatePacing?.();
     if (!active || (this.forecastAt !== null && now - this.forecastAt > 3000)) this.clearForecast?.();
     const sample = this.sampler.sample(measurement,connected,active,now);
     this.controls();
@@ -106,6 +121,9 @@ export class AINetworkMonitor {
       }
       return;
     }
+    // Remote pacing is not visible in protocol v2. Exclude receive/bidirectional
+    // observations from baseline fitting rather than assume the remote policy.
+    sample.strategy = this.sampler.policyChanged || this.sampler.receivedInInterval ? 'unknown' : sending && !receiving ? (client.transferStrategy || 'baseline') : active || sample.active_transfer ? 'unknown' : 'baseline';
     this.write('ai-throughput',formatBits(sample.throughput_mbps * 1e6 / 8));
     if (!this.identity || this.pending) return;
     this.request('sample',{sample}).then(result => { if (result) this.render(result,now); }).catch(error => {
@@ -146,8 +164,18 @@ export class AINetworkMonitor {
     }
   }
 
+  updatePacing() {
+    try {
+      if (this.latestMeasurement) this.client?.updateTransferIntelligence?.({
+        ...this.latestMeasurement, forecast:this.latestForecast,
+      });
+    } catch { this.client?.clearTransferIntelligence?.(); }
+  }
+
   clearForecast() {
     this.forecastAt = null;
+    this.latestForecast = null;
+    this.updatePacing?.();
     this.write('ai-forecast','Unavailable'); this.write('ai-trend','Unavailable');
     this.write('ai-advice','Keep collecting active-transfer observations before relying on predictive advice.');
   }
@@ -157,6 +185,7 @@ export class AINetworkMonitor {
     const trained = forecast.status === 'trained';
     this.write('ai-forecast-status',trained ? `Trained · RandomForest · ${forecast.labeled_samples} labeled windows · last holdout ${forecast.validation?.validation_samples ?? 'Unavailable'} windows` :
       forecast.status === 'unavailable' ? 'Forecast unavailable' : `Learning from network activity · ${forecast.labeled_samples || 0} / ${forecast.min_labeled_samples || 60} labeled windows`);
+    if (forecast.intervention_conditioned) this.write('ai-forecast-status', 'Trained · forecast under an intervention or unknown sending policy; not network capacity.');
     const evaluation = forecast.validation;
     this.write('ai-forecast-mae',Number.isFinite(evaluation?.mae_mbps) ? evaluation.mae_mbps.toFixed(3) : 'Unavailable');
     this.write('ai-baseline-mae',Number.isFinite(evaluation?.baseline_mae_mbps) ? evaluation.baseline_mae_mbps.toFixed(3) : 'Unavailable');
@@ -164,6 +193,8 @@ export class AINetworkMonitor {
       this.write('ai-forecast',forecast.predicted_mbps.toFixed(2));
       this.write('ai-trend',['improving','stable','degrading'].includes(advice.trend) ? advice.trend : 'Unavailable');
       this.forecastAt = measuredAt;
+      this.latestForecast = {...forecast, measuredAt};
+      this.updatePacing?.();
     }
     if (advice.recommendation && (this.forecastAt !== null || advice.recommendation.startsWith('Unusual'))) this.write('ai-advice',advice.recommendation);
   }

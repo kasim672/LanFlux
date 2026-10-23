@@ -182,3 +182,93 @@ def test_authorized_api_trains_and_exports_forecasts_on_explicitly_synthetic_fix
             assert 'forecast_mbps' in csv and room not in csv
             reset = client.post('/api/aiml/reset', json=identity, headers=auth(welcome)).json()
             assert reset['forecast']['status'] == 'learning'
+
+
+@pytest.mark.parametrize('strategy', ['rules', 'ml', 'unknown'])
+def test_paced_rows_never_train_or_complete_unpaced_labels(strategy):
+    predictor = ThroughputPredictor()
+    for i in range(6):
+        predictor.add(sample(i), i)
+    assert predictor.pending
+    for i in range(6, 110):
+        result = predictor.add(sample(i, strategy=strategy), i)
+    assert not predictor.pending and not predictor.examples
+    assert predictor.model is None and result['predicted_mbps'] is None
+    for i in range(110, 117):
+        predictor.add(sample(i), i)
+    assert not predictor.examples
+    predictor.add(sample(117), 117)
+    assert len(predictor.examples) == 1
+    assert predictor.examples[0].input_start >= 110
+
+
+def test_trained_forecast_on_paced_windows_is_marked_intervention_conditioned():
+    predictor, _ = collected(100)
+    count = len(predictor.examples)
+    for i in range(100, 105):
+        result = predictor.add(sample(i, strategy='ml'), i)
+        if i < 104:
+            assert result['predicted_mbps'] is None
+    assert result['intervention_conditioned'] is True
+    assert result['predicted_mbps'] is not None
+    assert 'not network capacity' in result['message']
+    assert len(predictor.examples) == count and not predictor.pending
+
+
+def test_isolation_baseline_excludes_paced_training_and_exports_strategy():
+    monitor = NetworkMonitor()
+    for i in range(40):
+        result = monitor.add(sample(i, strategy='rules'), now=i)
+    assert monitor.model is None and not monitor.training
+    assert monitor.first_at is None
+    assert 'excluded' in result['message']
+    for i in range(40, 70):
+        monitor.add(sample(i), now=i)
+    assert monitor.model is not None and len(monitor.training) == 30
+    result = monitor.add(sample(70, strategy='ml'), now=70)
+    assert result['prediction'] in ('Normal', 'Anomaly')
+    assert 'pacing itself' in result['message']
+    assert len(monitor.training) == 30
+    import csv
+    import io
+    rows = list(csv.DictReader(io.StringIO(monitor.export_csv())))
+    assert rows[0]['strategy'] == 'rules' and rows[-1]['strategy'] == 'ml'
+
+
+def test_anomaly_evaluation_rejects_paced_baseline_and_invalid_strategy():
+    from aiml.model import fit_baseline
+    from pydantic import ValidationError
+    with pytest.raises(ValueError, match='unpaced'):
+        fit_baseline([sample(i, strategy='ml') for i in range(30)])
+    with pytest.raises(ValidationError):
+        sample(0, strategy='invented')
+
+
+def test_csv_loader_preserves_policy_and_legacy_baseline_assumption(tmp_path):
+    import csv
+    from aiml.evaluate import load_csv, evaluate
+    path = tmp_path / 'metadata.csv'
+    fields = ['observed_at', 'rtt_ms', 'throughput_mbps', 'active_transfer',
+              'interval_ms', 'total_bytes', 'route', 'strategy']
+    data = {'observed_at': '2026-10-23T12:00:00+00:00', **sample(0, strategy='ml').model_dump()}
+    with path.open('w', newline='') as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields)
+        writer.writeheader()
+        writer.writerow(data)
+    assert load_csv(path)[0][1].strategy == 'ml'
+    with path.open('w', newline='') as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields[:-1], extrasaction='ignore')
+        writer.writeheader()
+        writer.writerow(data)
+    assert load_csv(path)[0][1].strategy == 'baseline'
+    with pytest.raises(ValueError, match='unpaced'):
+        evaluate([(str(i), sample(i, strategy='unknown')) for i in range(40)])
+
+
+def test_explicit_baseline_only_offline_evaluation_filters_and_reports_policy_rows():
+    from aiml.evaluate import evaluate
+    rows = [(str(i), sample(i, strategy='unknown' if i % 10 == 0 else 'baseline')) for i in range(60)]
+    report, results = evaluate(rows, baseline_only=True)
+    assert 'explicitly excluded: 6' in report
+    assert len(results) == 24
+    assert all(row['strategy'] == 'baseline' for row in results)

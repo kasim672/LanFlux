@@ -11,6 +11,8 @@ Start with the [project overview](../README.md) or read the **[complete PDF tech
 | [Configuration](CONFIGURATION.md) | Every environment variable, invitation discovery, limits, origins, ICE and credentials |
 | [Deployment](DEPLOYMENT.md) | Public HTTPS/WSS, Nginx, coturn, TLS/TCP 443, systemd and operator requirements |
 | [Network experiments](NETWORK_EXPERIMENTS.md) | Real 1/10/50 MiB trials, units, CSV, comparison methodology and manual phone regression |
+| [Adaptive experiments](ADAPTIVE_EXPERIMENTS.md) | Baseline/rules/ML comparison, observed throughput and RTT, privacy and experimental limits |
+| [Competition brief](COMPETITION_BRIEF.md) | Research contribution, professor demonstration, evidence and funding-oriented next milestones |
 | [Verification](VERIFICATION.md) | Exact executed checks, evidence provenance, coverage and unverified environments |
 | [Technical report source](REPORT.md) | Report introduction, glossary, reading order and reproducible PDF build |
 | [Changelog](../CHANGELOG.md) | Published history and current unreleased additions |

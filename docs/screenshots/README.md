@@ -1,6 +1,6 @@
 # Real interface screenshots
 
-Captured on **22 October 2026** from the running LANFLUX application by its Playwright Chromium regression suite. These are browser screenshots, not mockups or generated product renders. Screenshot-only framing makes navigation non-sticky when capturing the desktop workspace; it does not alter application data or transfer results.
+The original gallery was captured on **22 October 2026**, with an adaptive-transfer capture added on **23 October 2026**, from the running LANFLUX application by its Playwright Chromium regression suite. These are browser screenshots, not mockups or generated product renders. Screenshot-only framing makes navigation non-sticky when capturing the desktop workspace; it does not alter application data or transfer results.
 
 ## Gallery
 
@@ -19,6 +19,7 @@ Captured on **22 October 2026** from the running LANFLUX application by its Play
 | [Network diagnostics](network.png) | Observed states, direct route, payload counters, speed history and RTT during activity |
 | [Anomaly monitor](ai-monitor.png) | Trained IsolationForest evaluated on later actual observations; forecast still learning |
 | [AI Transfer Intelligence](ai-intelligence.png) | Both trained models, observed speed/RTT, forecast, validation errors and advisory text |
+| [Adaptive Transfer Lab](adaptive-lab.png) | Actual verified 8 MiB outcome with recorded pacing wait after a controlled RTT change |
 | [Settings](settings.png) | Real device label, relay preference and memory-limit information |
 | [Full landing page](landing.png) | Full desktop page for closer inspection |
 
@@ -52,3 +53,8 @@ Remove-Item Env:LANFLUX_SCREENSHOT_DIR
 - Metrics are captured as observed. Zero and Unavailable remain visible where appropriate. No prediction, chart, speed or completion label is invented or retouched.
 - Public images mask room capabilities, invitation addresses and QR contents. Private ICE inspection stays hidden. The screenshot mask is a deliberate redaction, not an application placeholder.
 - Temporary rooms close after the fixture exits. Raw CSVs and test artifacts remain in ignored `output/playwright/`.
+
+
+## Adaptive transfer extension - 23 October 2026
+
+`adaptive-lab.png` captures the real optional controller and comparison UI after an approved 8 MiB browser transfer. The fixture delays actual pong replies to produce a real RTT change; no throughput, latency or predictions are injected. Pacing remains experimental and results are not a physical Wi-Fi benchmark. No room code, invitation, filename, digest or private ICE address is included in the focused panel capture. Reproduce with the browser suite; test evidence is written under `output/playwright/adaptive-lab.png` for review before publication.
